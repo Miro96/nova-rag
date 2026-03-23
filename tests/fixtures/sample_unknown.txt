@@ -1,0 +1,7 @@
+This is a plain text file that should trigger the sliding window fallback.
+
+It has multiple lines of content that are not code but should still be
+indexed for semantic search purposes.
+
+The chunker should handle this gracefully using the fallback mechanism
+rather than tree-sitter parsing.

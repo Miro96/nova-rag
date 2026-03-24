@@ -7,7 +7,7 @@ from pathlib import Path
 
 import tree_sitter
 
-from rag_mcp.chunker import _get_parser, _LANGUAGE_CONFIGS
+from nova_rag.chunker import _get_parser, _LANGUAGE_CONFIGS
 
 
 @dataclass
@@ -36,6 +36,16 @@ class Import:
     file_path: str
     imported_name: str  # The specific name imported (e.g., "Path")
     module_path: str  # The module (e.g., "pathlib")
+
+
+@dataclass
+class Inheritance:
+    """A class inheritance/implementation relationship."""
+    child_name: str
+    parent_name: str
+    relation: str  # "extends", "implements"
+    file_path: str
+    line: int
 
 
 # ── Language-specific extraction configs ──
@@ -290,6 +300,99 @@ def _find_enclosing_function(node: tree_sitter.Node, def_types: dict[str, str]) 
     return None
 
 
+def _extract_inheritance(
+    node: tree_sitter.Node, lang: str, file_path: str
+) -> list[Inheritance]:
+    """Extract class inheritance from a class definition node."""
+    results: list[Inheritance] = []
+    child_name = None
+    line = node.start_point[0] + 1
+
+    # Find class name
+    for child in node.children:
+        if child.type in ("identifier", "name", "type_identifier"):
+            child_name = _get_node_text(child)
+            break
+
+    if not child_name:
+        return results
+
+    if lang == "python":
+        # class Foo(Bar, Baz):
+        for child in node.children:
+            if child.type == "argument_list":
+                for arg in child.children:
+                    if arg.type in ("identifier", "attribute"):
+                        parent = _get_node_text(arg)
+                        if parent and parent not in ("object",):
+                            results.append(Inheritance(child_name, parent, "extends", file_path, line))
+
+    elif lang in ("javascript", "typescript", "tsx", "java"):
+        # class Foo extends Bar implements Baz
+        prev_keyword = None
+        for child in node.children:
+            if child.type in ("extends", "implements"):
+                prev_keyword = child.type
+            elif child.type == "class_heritage":
+                for sub in child.children:
+                    if sub.type in ("extends_clause", "implements_clause"):
+                        rel = "extends" if "extends" in sub.type else "implements"
+                        for t in sub.children:
+                            if t.type in ("identifier", "type_identifier", "generic_type"):
+                                name = t
+                                if t.type == "generic_type":
+                                    for c in t.children:
+                                        if c.type in ("identifier", "type_identifier"):
+                                            name = c
+                                            break
+                                results.append(Inheritance(child_name, _get_node_text(name), rel, file_path, line))
+            elif prev_keyword and child.type in ("identifier", "type_identifier"):
+                results.append(Inheritance(child_name, _get_node_text(child), prev_keyword, file_path, line))
+                prev_keyword = None
+
+    elif lang == "c_sharp":
+        # class Foo : Bar, IBaz
+        for child in node.children:
+            if child.type == "base_list":
+                for sub in child.children:
+                    if sub.type in ("identifier", "generic_name", "qualified_name"):
+                        parent = _get_node_text(sub)
+                        rel = "implements" if parent.startswith("I") else "extends"
+                        results.append(Inheritance(child_name, parent, rel, file_path, line))
+
+    elif lang == "go":
+        # Go doesn't have class inheritance, but structs can embed other structs
+        pass
+
+    elif lang == "rust":
+        # impl Trait for Struct
+        if node.type == "impl_item":
+            trait_name = None
+            struct_name = None
+            for child in node.children:
+                if child.type == "type_identifier" and trait_name is None:
+                    trait_name = _get_node_text(child)
+                elif child.type == "type_identifier":
+                    struct_name = _get_node_text(child)
+            if trait_name and struct_name:
+                results.append(Inheritance(struct_name, trait_name, "implements", file_path, line))
+
+    return results
+
+
+# Class definition node types by language
+_CLASS_TYPES: dict[str, set[str]] = {
+    "python": {"class_definition"},
+    "javascript": {"class_declaration"},
+    "typescript": {"class_declaration"},
+    "tsx": {"class_declaration"},
+    "c_sharp": {"class_declaration", "struct_declaration", "interface_declaration"},
+    "go": set(),
+    "rust": {"impl_item"},
+    "java": {"class_declaration", "interface_declaration"},
+}
+
+
 def _walk_tree(
     node: tree_sitter.Node,
     lang: str,
@@ -297,11 +400,13 @@ def _walk_tree(
     symbols: list[Symbol],
     calls: list[Call],
     imports: list[Import],
+    inheritances: list[Inheritance],
 ) -> None:
-    """Recursively walk the AST to extract symbols, calls, and imports."""
+    """Recursively walk the AST to extract symbols, calls, imports, and inheritance."""
     def_types = _DEFINITION_TYPES.get(lang, {})
     call_types = _CALL_TYPES.get(lang, set())
     import_types = _IMPORT_TYPES.get(lang, set())
+    class_types = _CLASS_TYPES.get(lang, set())
 
     # Check if this node is a definition
     if node.type in def_types:
@@ -338,9 +443,13 @@ def _walk_tree(
             if node.type == "import_statement":
                 imports.extend(_extract_js_imports(node, file_path))
 
+    # Check if this node defines class inheritance
+    if node.type in class_types:
+        inheritances.extend(_extract_inheritance(node, lang, file_path))
+
     # Recurse
     for child in node.children:
-        _walk_tree(child, lang, file_path, symbols, calls, imports)
+        _walk_tree(child, lang, file_path, symbols, calls, imports, inheritances)
 
 
 # Extension → language name (reuse from chunker)
@@ -359,8 +468,8 @@ _EXT_TO_LANG: dict[str, str] = {
 
 def extract_graph(
     file_path: str, content: str, ext: str
-) -> tuple[list[Symbol], list[Call], list[Import]]:
-    """Extract the code graph (symbols, calls, imports) from a source file.
+) -> tuple[list[Symbol], list[Call], list[Import], list[Inheritance]]:
+    """Extract the code graph (symbols, calls, imports, inheritance) from a source file.
 
     Args:
         file_path: Path to the source file.
@@ -368,15 +477,15 @@ def extract_graph(
         ext: File extension (e.g. ".py").
 
     Returns:
-        Tuple of (symbols, calls, imports).
+        Tuple of (symbols, calls, imports, inheritances).
     """
     lang = _EXT_TO_LANG.get(ext)
     if lang is None:
-        return [], [], []
+        return [], [], [], []
 
     result = _get_parser(ext)
     if result is None:
-        return [], [], []
+        return [], [], [], []
 
     parser, _ = result
     source_bytes = content.encode("utf-8")
@@ -385,7 +494,8 @@ def extract_graph(
     symbols: list[Symbol] = []
     calls: list[Call] = []
     imports: list[Import] = []
+    inheritances: list[Inheritance] = []
 
-    _walk_tree(tree.root_node, lang, file_path, symbols, calls, imports)
+    _walk_tree(tree.root_node, lang, file_path, symbols, calls, imports, inheritances)
 
-    return symbols, calls, imports
+    return symbols, calls, imports, inheritances

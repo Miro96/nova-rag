@@ -1,105 +1,86 @@
-# rag-mcp
+# nova-rag
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![MCP](https://img.shields.io/badge/MCP-compatible-green.svg)](https://modelcontextprotocol.io)
+[![Tests](https://img.shields.io/badge/tests-84%20passed-brightgreen.svg)]()
+[![Free](https://img.shields.io/badge/price-free%20forever-brightgreen.svg)]()
 
-The first MCP server that gives your AI assistant **code graph navigation** — not just "find similar text", but "who calls this function?", "what does it depend on?", "who imports this module?".
+> **This project is completely free and open source (MIT).** No paid tiers, no premium features, no "contact sales" — everything is included.
+> If nova-rag saves you time, the best way to say thanks is to **give it a star** on GitHub. It helps others discover the project and keeps development going.
 
-Built on tree-sitter AST parsing, hybrid vector+keyword search, and a call graph index that no other RAG server provides.
+**Ask questions about code in plain language. Get answers with full context.**
+
+Don't know the function name? Don't need to. Ask *"where is payment processing?"* and get the function, who calls it, what it calls, and where it lives — in one request.
+
+The only MCP server that combines **semantic code search** with **code graph intelligence**. Other code graph servers (CodeGraph, Code Pathfinder, CodeGraphContext) require exact symbol names. nova-rag understands natural language.
+
+```
+You:    "how is authentication handled?"
+
+nova-rag: handleAuth() in src/auth/middleware.py:42
+         Callers: login_endpoint, process_request, verify_session
+         Callees: verify_token, get_user, logger.error
+
+         AuthService class in src/auth/service.py:8
+         Extends: BaseService
+         Callers: register_endpoint, oauth_callback
+```
 
 100% local. No API keys. No data leaves your machine.
 
-## Key Features
+---
 
-### Code Graph Navigation (unique to rag-mcp)
-
-No other RAG MCP server does this. During indexing, rag-mcp extracts a **call graph** from tree-sitter AST:
+## The Problem
 
 ```
-> rag_graph("handleAuth", direction="callers")
-
-Symbol: handleAuth (function) in src/auth/middleware.py:42
-Callers:
-  - login_endpoint() in src/routes/auth.py:15
-  - process_request() in src/middleware/main.py:87
-  - test_auth_flow() in tests/test_auth.py:23
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    You're new on a 3000-file project                    │
+│                    You need to fix a payment bug                        │
+│                    You don't know ANY function names                    │
+└────────────────────────────────┬────────────────────────────────────────┘
+                                 │
+                 ┌───────────────┴───────────────┐
+                 ▼                               ▼
+    ┌────────────────────────┐      ┌────────────────────────┐
+    │  Other code servers    │      │      nova-rag           │
+    ├────────────────────────┤      ├────────────────────────┤
+    │                        │      │                        │
+    │ You: "where is         │      │ You: "where is         │
+    │  payment processing?"  │      │  payment processing?"  │
+    │                        │      │                        │
+    │ Server: ❌ needs exact  │      │ Server: ✅              │
+    │ function name          │      │ processStripeWebhook() │
+    │                        │      │   in payments/hook.py  │
+    │ You: grep "payment"    │      │   Callers: checkout,   │
+    │ → 200 results...       │      │     subscription       │
+    │ You: grep "pay"        │      │   Callees: update,     │
+    │ → 500 results...       │      │     send_receipt       │
+    │                        │      │                        │
+    │ ⏱ 20 minutes later...  │      │ ⏱ 10 seconds           │
+    │ Found it!              │      │ Full picture. Done.    │
+    └────────────────────────┘      └────────────────────────┘
 ```
 
-```
-> rag_graph("psycopg2", direction="importers")
-
-Importers of psycopg2:
-  - src/db/pool.py (imports: connect)
-  - src/db/migrations.py (imports: sql, extensions)
-  - src/models/base.py (imports: psycopg2)
-```
-
-### Hybrid Search (Vector + BM25)
-
-Combines semantic understanding with exact keyword matching via Reciprocal Rank Fusion:
-
-| Query | Vector only | Keyword only | rag-mcp (hybrid) |
-|---|---|---|---|
-| `"error handling"` | Finds related code | Misses if no exact words | Finds both |
-| `"getUserById"` | Returns `fetchUser` first | Exact match | Exact match ranked first |
-| `"database connection"` | Finds `get_pool()` | Misses (wrong words) | Finds via both signals |
-
-### Graph-Enriched Search Results
-
-Every search result includes **who calls it** and **what it calls**:
-
-```
-> rag_search("error handling")
-
-[1] handle_error() in src/utils.py:12-18  (score: 0.034)
-    Callers: login_endpoint, process_request, validate_input
-    Callees: logger.error, format_response
-
-[2] AuthError class in src/auth/errors.py:5-20  (score: 0.029)
-    Callers: handleAuth, verify_token
-```
-
-### Tree-sitter Code-Aware Chunking
-
-Not just text splitting. rag-mcp parses code into **semantic units**:
-- Functions, classes, methods, interfaces (7 languages)
-- File headers (imports, module docstrings) — indexed separately
-- Symbol names extracted from AST — boosted in keyword search
-
-### Always Fresh Index
-
-File watcher auto-reindexes on changes (5s debounce). No manual `rag_index` needed after initial setup.
-
-### Fast Startup
-
-Embedding model pre-loads in a background thread at server start. First search is ready immediately.
-
-## Performance
-
-| | Without RAG | With rag-mcp |
-|---|---|---|
-| Tool calls per semantic query | 5-15 | 1-3 |
-| Time to find relevant code | 5-15s | 1-3s |
-| First-try accuracy | 40-60% | 85-95% |
+---
 
 ## Quick Start
 
-### Install
-
-```bash
-pip install rag-mcp
 ```
-
-### Connect to Claude Code
-
-```bash
-claude mcp add rag -- rag-mcp
+┌──────────────────────────────────────────────┐
+│  Step 1: Install                             │
+│  $ pip install nova-rag                       │
+│                                              │
+│  Step 2: Connect to Claude Code              │
+│  $ claude mcp add rag -- nova-rag             │
+│                                              │
+│  Step 3: Ask anything                        │
+│  > "how is authentication handled?"          │
+│  > "who calls the validate function?"        │
+│  > "find dead code in src/auth"              │
+│  > "class hierarchy of UserService"          │
+└──────────────────────────────────────────────┘
 ```
-
-That's it. Claude Code now has semantic code search. Try asking:
-
-> "Find where authentication errors are handled"
 
 ### Connect to Claude Desktop
 
@@ -109,428 +90,651 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 {
   "mcpServers": {
     "rag": {
-      "command": "rag-mcp",
+      "command": "nova-rag",
       "args": []
     }
   }
 }
 ```
 
-Restart Claude Desktop. You should see the hammer icon indicating the server is connected.
+### Connect to VS Code / Cursor
 
-### Connect to VS Code (Copilot / Continue)
-
-Add to `.vscode/mcp.json` in your workspace:
-
+VS Code — `.vscode/mcp.json`:
 ```json
-{
-  "servers": {
-    "rag": {
-      "command": "rag-mcp",
-      "args": []
-    }
-  }
-}
+{ "servers": { "rag": { "command": "nova-rag" } } }
 ```
 
-### Connect to Cursor
-
-Add to `~/.cursor/mcp.json`:
-
+Cursor — `~/.cursor/mcp.json`:
 ```json
-{
-  "mcpServers": {
-    "rag": {
-      "command": "rag-mcp",
-      "args": []
-    }
-  }
-}
+{ "mcpServers": { "rag": { "command": "nova-rag" } } }
 ```
 
-## Tools
+---
 
-### `rag_search`
+## Usage Guide — Just Ask in Plain Language
 
-Hybrid semantic + keyword search across an indexed codebase.
+Once connected, you don't need to call tools manually. Just ask Claude Code in natural language — nova-rag handles the rest.
 
-Combines vector similarity (finds semantically related code) with BM25 keyword matching (finds exact function/class names) using Reciprocal Rank Fusion.
+### Find code (semantic search)
 
-If the codebase hasn't been indexed yet, it will be indexed automatically on first call.
+```
+> where is payment processing?
+> how is authentication handled?
+> покажи код подключения к базе данных
+```
+
+nova-rag finds relevant functions even if you don't know their names. Results include callers/callees for full context.
+
+### Who calls a function
+
+```
+> who calls handleAuth?
+> кто вызывает validate?
+```
+
+Shows every place in the codebase that calls this function, with file paths and line numbers.
+
+### What a function calls
+
+```
+> what does processData call?
+> что вызывает функция login внутри?
+```
+
+Shows all functions called inside a given function.
+
+### Who imports a module
+
+```
+> who imports psycopg2?
+> кто импортирует модуль auth?
+```
+
+### Find dead code
+
+```
+> find unused functions
+> найди мёртвый код в src/
+```
+
+Lists functions and methods that are never called anywhere.
+
+### Impact analysis — what breaks if I change this?
+
+```
+> what is the impact of changing validate?
+> что затронет изменение handleAuth?
+```
+
+Shows direct callers, transitive callers, affected files, affected tests, and risk level.
+
+### Class hierarchy
+
+```
+> class hierarchy of UserService
+> наследование класса DataProcessor
+```
+
+Shows parents (extends/implements) and children.
+
+### Recent git changes
+
+```
+> what changed this week?
+> что менялось в auth за последнюю неделю?
+```
+
+Shows modified files, new/changed symbols, insertions/deletions.
+
+### First run
+
+On your first query to a new project:
+1. Embedding model downloads (~80MB) — once, then cached
+2. Project indexes (30-120s) — once, then incremental
+3. File watcher starts — auto-updates index on file changes
+
+All subsequent queries are instant.
+
+---
+
+## What It Does — Visual Guide
+
+### The Smart Router
+
+One tool handles everything. It reads your query and routes automatically:
+
+```
+                         ┌──────────────────┐
+                         │   code_search()  │
+                         │   "your query"   │
+                         └────────┬─────────┘
+                                  │
+                    ┌─────────────┼─────────────┐
+                    │ Intent      │ Detection   │
+                    ▼             ▼             ▼
+          ┌─────────────┐ ┌────────────┐ ┌──────────────┐
+          │  "where is  │ │ "who calls │ │ "dead code"  │
+          │  error      │ │ handleAuth"│ │              │
+          │  handling?" │ │            │ │              │
+          └──────┬──────┘ └─────┬──────┘ └──────┬───────┘
+                 │              │               │
+                 ▼              ▼               ▼
+          ┌────────────┐ ┌───────────┐ ┌──────────────┐
+          │  Semantic  │ │  Graph    │ │  Dead Code   │
+          │  Search    │ │  Query    │ │  Detection   │
+          │ (hybrid)   │ │ (callers) │ │              │
+          └────────────┘ └───────────┘ └──────────────┘
+
+  Also detects: callees, importers, class hierarchy
+  Works in English and Russian
+```
+
+### Hybrid Search — How Two Engines Beat One
+
+```
+  Query: "error handling"
+      │
+      ├───────────────────────────────────────────┐
+      │                                           │
+      ▼                                           ▼
+  ┌──────────────────────┐          ┌──────────────────────┐
+  │   🧠 Vector Search    │          │   📝 Keyword Search   │
+  │   (Neural Network)   │          │   (SQLite FTS5)      │
+  │                      │          │                      │
+  │ Understands MEANING  │          │ Matches exact WORDS  │
+  │                      │          │                      │
+  │ "error handling" →   │          │ "error handling" →   │
+  │  finds try/catch,    │          │  finds code with     │
+  │  exception handlers, │          │  literal "error" or  │
+  │  error responses     │          │  "handling" in text  │
+  │  even without those  │          │                      │
+  │  exact words         │          │                      │
+  └──────────┬───────────┘          └──────────┬───────────┘
+             │ rank 1, 2, 3...                 │ rank 1, 2, 3...
+             │                                 │
+             └────────────┬────────────────────┘
+                          │
+                          ▼
+              ┌───────────────────────┐
+              │  Reciprocal Rank      │
+              │  Fusion (RRF)         │
+              │                       │
+              │  score = 1/(k+rank₁)  │
+              │       + 1/(k+rank₂)   │
+              │                       │
+              │  Best of both worlds  │
+              └───────────┬───────────┘
+                          │
+                          ▼
+              ┌───────────────────────┐
+              │  Results + Graph      │
+              │                       │
+              │  handle_error()       │
+              │    Callers: login,    │
+              │      register         │
+              │    Callees: log,      │
+              │      format_response  │
+              └───────────────────────┘
+```
+
+**What each engine catches:**
+
+```
+  ┌──────────────────────────┬──────────────┬──────────────┬──────────────┐
+  │ Query                    │ Vector only  │ Keyword only │ Hybrid (RRF) │
+  ├──────────────────────────┼──────────────┼──────────────┼──────────────┤
+  │ "error handling"         │ ✅ finds     │ ✅ finds     │ ✅ best of   │
+  │                          │ related code │ exact words  │ both         │
+  ├──────────────────────────┼──────────────┼──────────────┼──────────────┤
+  │ "getUserById"            │ ⚠️ returns   │ ✅ exact     │ ✅ exact     │
+  │                          │ fetchUser    │ match        │ match #1     │
+  ├──────────────────────────┼──────────────┼──────────────┼──────────────┤
+  │ "database connection"    │ ✅ finds     │ ❌ no match  │ ✅ found     │
+  │                          │ get_pool()   │ (wrong words)│ via vector   │
+  ├──────────────────────────┼──────────────┼──────────────┼──────────────┤
+  │ "auth middleware setup"  │ ✅ semantic  │ ⚠️ partial   │ ✅ combined  │
+  │                          │ match        │ match        │ score        │
+  └──────────────────────────┴──────────────┴──────────────┴──────────────┘
+```
+
+### Code Graph — What Gets Extracted
+
+```
+  Source file: src/auth/middleware.py
+  ┌─────────────────────────────────────────────────┐
+  │ from auth.tokens import verify_token             │──── Import
+  │ from db import get_user                          │──── Import
+  │                                                  │
+  │ class AuthMiddleware(BaseMiddleware):             │──── Symbol (class)
+  │     │                                            │     + Inheritance
+  │     │   def handleAuth(self, request):           │──── Symbol (method)
+  │     │       token = verify_token(request.token)  │──── Call
+  │     │       user = get_user(token.user_id)       │──── Call
+  │     │       if not user:                         │
+  │     │           logger.error("No user")          │──── Call
+  │     │       return user                          │
+  │     │                                            │
+  └─────┴────────────────────────────────────────────┘
+
+  Extracted graph for this file:
+
+  ┌─────────────┐     ┌──────────────────────────────────────┐
+  │  Symbols    │     │  AuthMiddleware (class, line 4)      │
+  │             │     │  handleAuth (method, line 6)          │
+  └─────────────┘     └──────────────────────────────────────┘
+
+  ┌─────────────┐     ┌──────────────────────────────────────┐
+  │  Calls      │     │  handleAuth → verify_token (line 7)  │
+  │             │     │  handleAuth → get_user (line 8)       │
+  │             │     │  handleAuth → logger.error (line 10)  │
+  └─────────────┘     └──────────────────────────────────────┘
+
+  ┌─────────────┐     ┌──────────────────────────────────────┐
+  │  Imports    │     │  auth.tokens → verify_token          │
+  │             │     │  db → get_user                        │
+  └─────────────┘     └──────────────────────────────────────┘
+
+  ┌─────────────┐     ┌──────────────────────────────────────┐
+  │ Inheritance │     │  AuthMiddleware extends BaseMiddleware│
+  └─────────────┘     └──────────────────────────────────────┘
+```
+
+### Graph Queries — What You Can Ask
+
+```
+  ┌──────────────────────────────────────────────────────────────┐
+  │                     handleAuth()                             │
+  │                                                              │
+  │  ◀── CALLERS ──────────────── CALLEES ──▶                    │
+  │                                                              │
+  │  login_endpoint()          verify_token()                    │
+  │  process_request()         get_user()                        │
+  │  test_auth_flow()          logger.error()                    │
+  │                                                              │
+  │  ◀── IMPORTERS ──────────── HIERARCHY ──▶                    │
+  │                                                              │
+  │  routes/auth.py            BaseMiddleware                    │
+  │  middleware/main.py           ▲                               │
+  │  tests/test_auth.py          │ extends                       │
+  │                            AuthMiddleware                    │
+  │                               ▲                               │
+  │                               │ extends                       │
+  │                            AdminMiddleware                   │
+  └──────────────────────────────────────────────────────────────┘
+
+  direction="callers"  → left side (who calls this?)
+  direction="callees"  → right side (what does this call?)
+  direction="importers"→ bottom-left (who imports this?)
+  direction="hierarchy"→ bottom-right (inheritance tree)
+  direction="both"     → callers + callees
+  depth=2              → callers of callers (transitive)
+```
+
+### Transitive Callers (depth=2)
+
+```
+  rag_graph("verify_token", direction="callers", depth=2)
+
+  verify_token()
+     │
+     ◀── handleAuth()                      ← depth 1 (direct callers)
+     │      │
+     │      ◀── login_endpoint()           ← depth 2 (callers of callers)
+     │      ◀── process_request()
+     │      ◀── test_auth_flow()
+     │
+     ◀── refresh_session()                 ← depth 1
+            │
+            ◀── session_middleware()        ← depth 2
+            ◀── test_refresh()
+```
+
+### Dead Code Detection
+
+```
+  rag_deadcode()
+
+  All symbols:          Symbols with callers:     Dead code:
+  ┌───────────────┐     ┌───────────────┐         ┌───────────────┐
+  │ handleAuth    │     │ handleAuth ✅  │         │               │
+  │ verify_token  │     │ verify_token ✅│         │               │
+  │ get_user      │  →  │ get_user ✅    │    →    │ old_validate  │
+  │ old_validate  │     │               │         │ format_v1     │
+  │ format_v1     │     │               │         │ LegacyParser  │
+  │ LegacyParser  │     │               │         │               │
+  │ main          │     │ main (skip)   │         │ 3 functions   │
+  │ test_auth     │     │ test_ (skip)  │         │ 0 callers     │
+  └───────────────┘     └───────────────┘         └───────────────┘
+
+  Filters out: main, __init__, setUp, tearDown, test_*
+```
+
+### Class Hierarchy
+
+```
+  rag_graph("DataProcessor", direction="hierarchy")
+
+                    ┌─────────────────┐
+                    │  BaseProcessor   │
+                    │  (base.py:5)     │
+                    └────────┬────────┘
+                             │ extends
+                    ┌────────┴────────┐
+                    │ DataProcessor    │  ◀── you asked about this
+                    │ (processor.py:12)│
+                    └────────┬────────┘
+                             │ extends
+               ┌─────────────┼─────────────┐
+      ┌────────┴────────┐         ┌────────┴────────┐
+      │AdvancedProcessor│         │ StreamProcessor  │
+      │ (advanced.py:8) │         │ (stream.py:15)   │
+      └─────────────────┘         └──────────────────┘
+```
+
+### Indexing Pipeline — What Happens Inside
+
+```
+  Your project (3000 files)
+       │
+       ▼
+  ┌─────────────────────────────────────────────────────────────────┐
+  │  Phase 1: File Discovery                                        │
+  │  ├── Walk all files recursively                                 │
+  │  ├── Skip: .git, node_modules, __pycache__, binaries            │
+  │  ├── Respect .gitignore                                         │
+  │  └── Skip files > 1MB                                           │
+  │  Result: 1200 indexable files                                   │
+  └──────────────────────────────┬──────────────────────────────────┘
+                                 │
+                                 ▼
+  ┌─────────────────────────────────────────────────────────────────┐
+  │  Phase 2: Parallel Processing  (8 threads)            ⚡ FAST  │
+  │                                                                 │
+  │  Thread 1: auth.py ──┐                                          │
+  │  Thread 2: db.py ────┤  Each thread:                            │
+  │  Thread 3: api.py ───┤  ├── Read file                           │
+  │  Thread 4: utils.py ─┤  ├── Tree-sitter parse                   │
+  │  Thread 5: models.py ┤  ├── Extract chunks (functions, classes)  │
+  │  Thread 6: tests.py ─┤  ├── Extract graph (calls, imports)      │
+  │  Thread 7: views.py ─┤  └── Extract inheritance                  │
+  │  Thread 8: forms.py ─┘                                          │
+  │                                                                 │
+  │  Result: chunks + graph data for all files                      │
+  └──────────────────────────────┬──────────────────────────────────┘
+                                 │
+                                 ▼
+  ┌─────────────────────────────────────────────────────────────────┐
+  │  Phase 3: Embedding  (sequential — model not thread-safe)       │
+  │                                                                 │
+  │  all-MiniLM-L6-v2 model (384-dim vectors)                      │
+  │  Batch size: 64 chunks at a time                                │
+  │  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐                           │
+  │  │Batch1│→│Batch2│→│Batch3│→│Batch4│→ ...                       │
+  │  └──────┘ └──────┘ └──────┘ └──────┘                           │
+  └──────────────────────────────┬──────────────────────────────────┘
+                                 │
+                                 ▼
+  ┌─────────────────────────────────────────────────────────────────┐
+  │  Phase 4: Storage  (sequential — SQLite not thread-safe)        │
+  │                                                                 │
+  │  ┌─────────────┐    ┌──────────────────────────────────┐        │
+  │  │    FAISS     │    │           SQLite                  │        │
+  │  │              │    │                                   │        │
+  │  │  384-dim     │    │  chunks ──── FTS5 keyword index  │        │
+  │  │  vectors     │    │  symbols ─── function/class defs │        │
+  │  │  for cosine  │    │  calls ───── caller→callee edges │        │
+  │  │  similarity  │    │  imports ─── file→module edges   │        │
+  │  │              │    │  inheritance─ parent→child edges  │        │
+  │  └─────────────┘    └──────────────────────────────────┘        │
+  └─────────────────────────────────────────────────────────────────┘
+```
+
+### After Indexing — File Watcher Keeps It Fresh
+
+```
+  ┌──────────────┐
+  │ You edit     │
+  │ auth.py      │
+  └──────┬───────┘
+         │ filesystem event
+         ▼
+  ┌──────────────┐    5 sec     ┌───────────────────────┐
+  │  Watchdog    │──debounce──▶ │  Incremental reindex  │
+  │  Observer    │              │  Only changed files   │
+  └──────────────┘              └───────────────────────┘
+
+  No manual rag_index needed. Always fresh.
+```
+
+---
+
+## All Tools Reference
+
+### `code_search` — Smart Router (recommended)
+
+One tool for everything. Auto-detects intent from your query.
+
+```
+  code_search("where is error handling?")        → intent: search
+  code_search("who calls handleAuth?")           → intent: callers
+  code_search("what does processData call?")     → intent: callees
+  code_search("who imports psycopg2?")           → intent: importers
+  code_search("dead code in src/auth")           → intent: deadcode
+  code_search("class hierarchy of UserService")  → intent: hierarchy
+  code_search("кто вызывает validate?")          → intent: callers (RU)
+```
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `query` | string | yes | — | Natural language search query |
-| `path` | string | no | cwd | Project directory to search |
-| `top_k` | integer | no | 10 | Max number of results |
-| `path_filter` | string | no | null | Substring filter on file paths (e.g. `"src/auth"`) |
-| `language` | string | no | null | Filter by language (e.g. `"python"`, `"typescript"`) |
+| `query` | string | yes | — | Natural language query |
+| `path` | string | no | cwd | Project directory |
+| `top_k` | integer | no | 10 | Max results (for search) |
+| `path_filter` | string | no | null | Filter file paths |
+| `language` | string | no | null | Filter by language |
 
-**Returns:** Array of matching chunks with graph context:
+### `rag_search` — Direct Hybrid Search
 
-```json
-[
-  {
-    "id": 42,
-    "score": 0.032787,
-    "file": "/path/to/project/src/auth.py",
-    "name": "handle_auth_error",
-    "start_line": 15,
-    "end_line": 28,
-    "chunk_type": "function_definition",
-    "language": "python",
-    "snippet": "def handle_auth_error(error: AuthError) -> Response:\n    ...",
-    "callers": [
-      {"caller": "login_endpoint", "file": "src/routes/auth.py", "line": 23}
-    ],
-    "callees": [
-      {"name": "logger.error", "line": 17},
-      {"name": "format_response", "line": 19}
-    ]
-  }
-]
-```
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `query` | string | yes | — | Search query |
+| `path` | string | no | cwd | Project directory |
+| `top_k` | integer | no | 10 | Max results |
+| `path_filter` | string | no | null | Filter file paths |
+| `language` | string | no | null | Filter by language |
 
-### `rag_index`
+### `rag_graph` — Direct Graph Navigation
 
-Index a codebase directory for semantic search.
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `name` | string | yes | — | Symbol name |
+| `path` | string | no | cwd | Project directory |
+| `direction` | string | no | `"both"` | `"callers"`, `"callees"`, `"both"`, `"importers"`, `"hierarchy"` |
+| `depth` | integer | no | 1 | Traversal depth (1-2) |
 
-Scans source files, parses them into semantic chunks using tree-sitter, generates embeddings with a local model, and stores them for hybrid retrieval. Supports incremental updates — only changed files are re-indexed. Automatically starts a file watcher.
+### `rag_deadcode` — Dead Code Detection
+
+| Parameter | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `path` | string | no | cwd | Project directory |
+| `path_filter` | string | no | null | Scope to specific path |
+
+### `rag_index` — Index / Reindex
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `path` | string | no | cwd | Directory to index |
-| `force` | boolean | no | false | Clear existing index and re-index everything |
+| `force` | boolean | no | false | Full rebuild |
 
-**Returns:**
-
-```json
-{
-  "files_indexed": 127,
-  "chunks_created": 843,
-  "skipped": 0,
-  "removed": 0,
-  "duration_sec": 34.5,
-  "messages": ["Scanning files...", "Found 127 files...", "Done: 127 files, 843 chunks in 34.5s"]
-}
-```
-
-### `rag_status`
-
-Get the status of the RAG index for a project.
+### `rag_status` — Index Status
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `path` | string | no | cwd | Project directory to check |
-
-**Returns:**
-
-```json
-{
-  "indexed": true,
-  "indexed_files": 127,
-  "total_chunks": 843,
-  "vector_count": 843,
-  "symbols": 312,
-  "calls": 1547,
-  "imports": 89,
-  "last_updated": 1711200000.0,
-  "index_size_mb": 12.4
-}
-```
-
-### `rag_graph`
-
-Navigate the code graph — find callers, callees, and importers of any symbol. This is the killer feature that no other RAG server provides.
-
-| Parameter | Type | Required | Default | Description |
-|---|---|---|---|---|
-| `name` | string | yes | — | Function, class, or module name |
 | `path` | string | no | cwd | Project directory |
-| `direction` | string | no | `"both"` | `"callers"`, `"callees"`, `"both"`, or `"importers"` |
-| `depth` | integer | no | 1 | Traversal depth (1 = direct, 2 = transitive) |
 
-**Examples:**
+Returns: `indexed_files`, `total_chunks`, `symbols`, `calls`, `imports`, `inheritances`, `index_size_mb`.
 
-```
-rag_graph("handleAuth", direction="callers")
-```
-
-```json
-{
-  "name": "handleAuth",
-  "direction": "callers",
-  "symbol": {
-    "name": "handleAuth",
-    "kind": "function",
-    "file": "src/auth/middleware.py",
-    "line": 42,
-    "snippet": "def handleAuth(request): ..."
-  },
-  "callers": [
-    {"caller": "login_endpoint", "file": "src/routes/auth.py", "line": 15, "snippet": "..."},
-    {"caller": "process_request", "file": "src/middleware/main.py", "line": 87, "snippet": "..."}
-  ]
-}
-```
-
-```
-rag_graph("psycopg2", direction="importers")
-```
-
-```json
-{
-  "name": "psycopg2",
-  "direction": "importers",
-  "importers": [
-    {"file": "src/db/pool.py", "imported_name": "connect", "module": "psycopg2"},
-    {"file": "src/db/migrations.py", "imported_name": "sql", "module": "psycopg2"}
-  ]
-}
-```
-
-**Depth 2 (transitive callers):**
-
-```
-rag_graph("helper", direction="callers", depth=2)
-```
-
-Returns callers of `helper`, and for each caller — who calls *them*. Useful for understanding full call chains.
-
-### `rag_watch`
-
-Start a file watcher for automatic re-indexing. Watches for file changes and re-indexes modified files with a 5-second debounce.
+### `rag_watch` — File Watcher
 
 | Parameter | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `path` | string | no | cwd | Project directory to watch |
+| `path` | string | no | cwd | Directory to watch |
 
-**Returns:**
-
-```json
-{
-  "watching": true,
-  "path": "/path/to/project",
-  "newly_started": true
-}
-```
-
-## How It Works
-
-### Indexing Pipeline
-
-```
-Source files
-    │
-    ▼
-File Discovery ─── respects .gitignore, skips binaries, max 1MB
-    │
-    ▼
-Tree-sitter Parsing
-    │
-    ├──▶ Chunking ─── functions, classes, methods, interfaces
-    │                  + file headers (imports, docstrings)
-    │                  + name extraction from AST
-    │                  + fallback: sliding window for unsupported languages
-    │
-    ├──▶ Graph Extraction ─── symbols (definitions)
-    │                          + calls (function invocations)
-    │                          + imports (import statements)
-    ▼
-Embedding ─── sentence-transformers (all-MiniLM-L6-v2, ~80MB, runs on CPU)
-    │
-    ▼
-Storage
-    ├── FAISS (IndexIDMap + IndexFlatIP) ─── vector embeddings
-    └── SQLite
-        ├── chunks + FTS5 ─── metadata + full-text index (BM25)
-        ├── symbols ─── function/class definitions with chunk links
-        ├── calls ─── caller → callee relationships
-        └── imports ─── file → module dependencies
-```
-
-### Search Pipeline
-
-```
-Query: "error handling in auth"
-    │
-    ├──▶ Embed query ──▶ FAISS vector search ──▶ ranked by cosine similarity
-    │
-    ├──▶ Tokenize query ──▶ FTS5 keyword search ──▶ ranked by BM25
-    │
-    ▼
-Pre-filter (optional) ─── by path/language via SQLite → FAISS IDSelector
-    │
-    ▼
-Reciprocal Rank Fusion: score = 1/(k + rank_vector) + 1/(k + rank_keyword)
-    │
-    ▼
-Top-K results with file paths, line numbers, names, and snippets
-```
-
-### Why Hybrid Search?
-
-| Query type | Vector only | Keyword only | Hybrid (rag-mcp) |
-|---|---|---|---|
-| `"error handling"` | Finds semantically related code | Misses if no exact words | Finds both |
-| `"getUserById"` | Returns `fetchUser` (similar meaning) | Exact match | Exact match ranked first |
-| `"database connection setup"` | Finds `get_pool()` via semantic similarity | Misses (different words) | Finds via both signals |
-
-## Configuration
-
-All settings are configurable via environment variables:
-
-| Variable | Default | Description |
-|---|---|---|
-| `RAG_MCP_MODEL` | `all-MiniLM-L6-v2` | [Sentence-transformers](https://www.sbert.net/docs/pretrained_models.html) model name |
-| `RAG_MCP_CHUNK_SIZE` | `60` | Max lines per chunk (sliding window fallback) |
-| `RAG_MCP_CHUNK_OVERLAP` | `10` | Overlap lines between sliding window chunks |
-| `RAG_MCP_BATCH_SIZE` | `64` | Embedding batch size |
-| `RAG_MCP_DATA_DIR` | `~/.rag-mcp` | Index storage directory |
-
-### Using a different model
-
-```bash
-# Use a larger, more accurate model
-RAG_MCP_MODEL=all-mpnet-base-v2 rag-mcp
-
-# Or set in your shell config
-export RAG_MCP_MODEL=all-mpnet-base-v2
-```
-
-### Storage location
-
-Indexes are stored in `~/.rag-mcp/<hash>/` where `<hash>` is derived from the project's absolute path. Each project gets its own isolated index.
-
-```
-~/.rag-mcp/
-├── a1b2c3d4e5f6/     # /Users/you/project-a
-│   ├── faiss.index
-│   └── meta.db
-└── f6e5d4c3b2a1/     # /Users/you/project-b
-    ├── faiss.index
-    └── meta.db
-```
+---
 
 ## Supported Languages
 
-| Language | Parser | Extracted Chunks |
-|---|---|---|
-| Python | tree-sitter | functions, classes, decorated definitions |
-| TypeScript / TSX | tree-sitter | functions, classes, interfaces, type aliases, methods |
-| JavaScript / JSX | tree-sitter | functions, classes, arrow functions, methods |
-| C# | tree-sitter | methods, classes, interfaces, structs, enums, records |
-| Go | tree-sitter | functions, methods, type declarations |
-| Rust | tree-sitter | functions, impl blocks, structs, enums, traits |
-| Java | tree-sitter | methods, classes, interfaces, enums |
-| All other text files | sliding window | line-based blocks (60 lines, 10 overlap) |
+```
+  ┌──────────────────┬────────────────────────────┬──────────────────────────┐
+  │ Language         │ Chunks                     │ Graph                    │
+  ├──────────────────┼────────────────────────────┼──────────────────────────┤
+  │ Python           │ functions, classes, defs    │ calls, imports, inherit  │
+  │ TypeScript / TSX │ functions, classes, ifaces  │ calls, imports, inherit  │
+  │ JavaScript / JSX │ functions, classes, arrows  │ calls, imports           │
+  │ C#               │ methods, classes, structs   │ calls, imports, inherit  │
+  │ Go               │ functions, methods, types   │ calls, imports           │
+  │ Rust             │ functions, impls, traits    │ calls, imports, inherit  │
+  │ Java             │ methods, classes, ifaces    │ calls, imports, inherit  │
+  ├──────────────────┼────────────────────────────┼──────────────────────────┤
+  │ Other text files │ 60-line sliding window     │ —                        │
+  └──────────────────┴────────────────────────────┴──────────────────────────┘
 
-All languages also get **file header chunks** (imports, module docstrings) and **name extraction** from the AST.
-
-## Troubleshooting
-
-### Server doesn't start
-
-```bash
-# Check if rag-mcp is installed
-which rag-mcp
-
-# Run directly to see error output
-python -m rag_mcp
+  All languages also get: file header chunks (imports, docstrings)
+                          + symbol name extraction from AST
 ```
 
-### First search is slow
-
-The embedding model (~80MB) is downloaded on first use and cached by sentence-transformers. Subsequent starts pre-load the model in a background thread.
-
-### Index is stale
-
-The file watcher auto-updates the index. If you need a full refresh:
-
-> "Run rag_index with force=true"
-
-Or programmatically: the `rag_index` tool with `force: true` clears and rebuilds the entire index.
-
-### High memory usage
-
-The embedding model uses ~200-400MB RAM. For memory-constrained environments, use a smaller model:
-
-```bash
-RAG_MCP_MODEL=all-MiniLM-L12-v2 rag-mcp
-```
+---
 
 ## Use with CLAUDE.md
 
-Add this to your project's `CLAUDE.md` to teach Claude Code when to use rag-mcp:
+Add to your project's `CLAUDE.md`:
 
 ```markdown
-## Code Search (rag-mcp)
+## Code Search (nova-rag)
 
-This project has a local RAG index. Use it:
+This project has a local code intelligence index. Prefer `code_search` over Grep for questions about the codebase:
 
-- **Before Grep/Glob**, try `rag_search` for conceptual queries ("error handling", "auth flow")
-- **Use `rag_graph`** to understand code relationships:
-  - `rag_graph(name="funcName", direction="callers")` — who calls this?
-  - `rag_graph(name="funcName", direction="callees")` — what does it call?
-  - `rag_graph(name="module", direction="importers")` — who imports this?
-- Search results include `callers`/`callees` — use them for full context
-- Use `language` and `path_filter` to narrow results
+- "where is payment processing?" → finds relevant functions with full context
+- "who calls handleAuth?" → shows all call sites
+- "dead code in src/" → finds unused functions
+- "class hierarchy of UserService" → shows inheritance tree
+
+Search results include callers/callees — use them to understand the full picture.
+For exact string matches (TODOs, error messages), use Grep as usual.
 ```
 
-## Comparison with Alternatives
+---
 
-| Feature | rag-mcp | mcp-local-rag | local-rag | mcp-rag-local | ChromaDB-MCP |
-|---|---|---|---|---|---|
-| **Code graph (call graph)** | Yes | No | No | No | No |
-| **`rag_graph` tool** | Yes | No | No | No | No |
-| **Callers/callees in search results** | Yes | No | No | No | No |
-| **Tree-sitter AST chunking** | Yes (7 langs) | No | No | No | No |
-| **Symbol name extraction** | Yes | No | No | No | No |
-| **File header indexing** | Yes | No | No | No | No |
-| Hybrid search (vector + keyword) | RRF fusion | Keyword boost | FTS5 | No | No |
-| Pre-filtering before vector search | FAISS IDSelector | No | No | No | No |
-| File watcher (auto-reindex) | Yes | No | No | No | No |
-| Model warm start | Yes | No | No | No | No |
-| Designed for code | Yes | Documents | Knowledge | Documents | Documents |
+## Comparison
+
+### nova-rag vs Code Graph Servers
+
+```
+  ┌────────────────────────────┬──────────────────┬──────────────────────┐
+  │                            │     nova-rag      │  Code Graph Servers  │
+  │                            │                  │  (CodeGraph, Code    │
+  │                            │                  │   Pathfinder, etc.)  │
+  ├────────────────────────────┼──────────────────┼──────────────────────┤
+  │ "where is error handling?" │ ✅ Understands   │ ❌ Needs exact name  │
+  │ "who calls handleAuth?"   │ ✅ Yes           │ ✅ Yes (strength)    │
+  │ Semantic search            │ ✅ Hybrid V+K    │ ❌ No               │
+  │ Dataflow analysis          │ ❌ No            │ ✅ Code Pathfinder   │
+  │ Impact analysis            │ ⚠️  Basic depth=2 │ ✅ Full blast radius │
+  │ Languages                  │ 7                │ Up to 64             │
+  │ Dependencies               │ ~2-3GB (PyTorch) │ 20MB-200MB           │
+  │ Setup                      │ pip install      │ Varies               │
+  └────────────────────────────┴──────────────────┴──────────────────────┘
+
+  They complement each other:
+  nova-rag = explore & discover    →    Code Pathfinder = deep analysis
+  "find the right symbols"             "analyze those symbols deeply"
+```
+
+### nova-rag vs RAG Document Servers
+
+```
+  ┌────────────────────────────┬──────────────────┬──────────────────────┐
+  │                            │     nova-rag      │  Document RAG        │
+  │                            │                  │  (mcp-local-rag,     │
+  │                            │                  │   ChromaDB-MCP)      │
+  ├────────────────────────────┼──────────────────┼──────────────────────┤
+  │ Code graph                 │ ✅ Full          │ ❌ No               │
+  │ Dead code detection        │ ✅ Yes           │ ❌ No               │
+  │ Tree-sitter chunking       │ ✅ 7 languages   │ ❌ Text splitting    │
+  │ Smart router               │ ✅ Auto-detects  │ ❌ No               │
+  │ Class hierarchy            │ ✅ Yes           │ ❌ No               │
+  │ Designed for               │ Code             │ Documents (PDF, MD)  │
+  └────────────────────────────┴──────────────────┴──────────────────────┘
+```
+
+---
+
+## Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `NOVA_RAG_MODEL` | `all-MiniLM-L6-v2` | Sentence-transformers model |
+| `NOVA_RAG_CHUNK_SIZE` | `60` | Max lines per sliding window chunk |
+| `NOVA_RAG_CHUNK_OVERLAP` | `10` | Overlap between chunks |
+| `NOVA_RAG_BATCH_SIZE` | `64` | Embedding batch size |
+| `NOVA_RAG_DATA_DIR` | `~/.nova-rag` | Index storage directory |
+
+```
+  Storage layout:
+
+  ~/.nova-rag/
+  ├── a1b2c3d4e5f6/          ← project hash
+  │   ├── faiss.index         ← vector embeddings
+  │   └── meta.db             ← SQLite (chunks, graph, FTS5)
+  └── f6e5d4c3b2a1/          ← another project
+      ├── faiss.index
+      └── meta.db
+
+  One index per project. Persisted between sessions.
+```
+
+---
+
+## Troubleshooting
+
+**First search is slow:** Model (~80MB) downloads on first use. Pre-loaded in background on subsequent starts.
+
+**High memory (~400MB):** That's the embedding model. Use `NOVA_RAG_MODEL=all-MiniLM-L12-v2` for smaller footprint.
+
+**Index stale:** File watcher auto-updates. Force full rebuild: `rag_index(force=true)`.
+
+**Server won't start:** Check `which nova-rag` or run `python -m nova_rag` for error output.
+
+---
 
 ## Development
 
 ```bash
-git clone https://github.com/yourusername/rag-mcp.git
-cd rag-mcp
+git clone https://github.com/yourusername/nova-rag.git
+cd nova-rag
 pip install -e ".[dev]"
-pytest tests/ -v
+pytest tests/ -v   # 84 tests
 ```
 
 ### Project Structure
 
 ```
-src/rag_mcp/
-├── server.py      MCP server entry point, 5 tools
-├── indexer.py      File discovery, chunking, embedding, graph extraction
-├── chunker.py      Tree-sitter AST parsing (7 languages) + sliding window fallback
-├── graph.py        Code graph extraction: symbols, calls, imports from AST
-├── store.py        FAISS + SQLite (FTS5 + graph tables) hybrid storage
-├── searcher.py     Hybrid search with RRF fusion + graph enrichment
-├── watcher.py      File watcher for auto re-indexing
-└── config.py       Environment-based configuration
-```
-
-### Running tests
-
-```bash
-pytest tests/ -v          # All tests
-pytest tests/test_store.py -v  # Just store tests
+  src/nova_rag/
+  ├── server.py      MCP server, 8 tools including smart router
+  ├── searcher.py    Smart router, hybrid search, graph queries, dead code
+  ├── indexer.py     Multithreaded file processing + embedding
+  ├── chunker.py     Tree-sitter AST parsing (7 languages) + fallback
+  ├── graph.py       Code graph: symbols, calls, imports, inheritance
+  ├── store.py       FAISS + SQLite (FTS5 + graph + inheritance)
+  ├── watcher.py     File watcher for auto re-indexing
+  └── config.py      Environment-based configuration
 ```
 
 ## Contributing
 
-Contributions are welcome! Please:
-
 1. Fork the repo
-2. Create a feature branch (`git checkout -b feature/my-feature`)
+2. Create a feature branch
 3. Write tests for new functionality
-4. Ensure all tests pass (`pytest tests/ -v`)
+4. Ensure all 84 tests pass (`pytest tests/ -v`)
 5. Submit a PR
 
 ## License

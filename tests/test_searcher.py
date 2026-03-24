@@ -1,8 +1,8 @@
 """Tests for the searcher (hybrid search)."""
 
-from rag_mcp.config import Config
-from rag_mcp.indexer import index_project
-from rag_mcp.searcher import get_status, search
+from nova_rag.config import Config
+from nova_rag.indexer import index_project
+from nova_rag.searcher import get_status, search
 
 
 class TestHybridSearch:

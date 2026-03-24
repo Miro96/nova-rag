@@ -2,8 +2,8 @@
 
 import pytest
 
-from rag_mcp.config import Config
-from rag_mcp.indexer import index_project
+from nova_rag.config import Config
+from nova_rag.indexer import index_project
 
 
 class TestIndexer:

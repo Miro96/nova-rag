@@ -10,7 +10,7 @@ from pathlib import Path
 from watchdog.events import FileSystemEventHandler, FileSystemEvent
 from watchdog.observers import Observer
 
-from rag_mcp.config import Config
+from nova_rag.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +86,7 @@ class _IndexUpdateHandler(FileSystemEventHandler):
 
         logger.info("File watcher: %d files changed, triggering incremental re-index", count)
         try:
-            from rag_mcp.indexer import index_project
+            from nova_rag.indexer import index_project
 
             index_project(
                 self._project_path,

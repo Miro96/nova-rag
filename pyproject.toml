@@ -3,16 +3,16 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "rag-mcp"
+name = "nova-rag"
 version = "0.1.0"
-description = "Local RAG MCP server for semantic code search — works with Claude Code and any MCP client"
+description = "Local code intelligence MCP server — semantic search + code graph + impact analysis. Ask code in plain language."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 authors = [
     { name = "Vladimir Pronevic" },
 ]
-keywords = ["mcp", "rag", "semantic-search", "code-search", "claude-code"]
+keywords = ["mcp", "rag", "semantic-search", "code-search", "code-graph", "claude-code", "nova-rag"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -47,10 +47,10 @@ dev = [
 ]
 
 [project.scripts]
-rag-mcp = "rag_mcp.server:main"
+nova-rag = "nova_rag.server:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/rag_mcp"]
+packages = ["src/nova_rag"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

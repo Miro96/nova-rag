@@ -1,4 +1,4 @@
-"""Configuration for rag-mcp."""
+"""Configuration for nova-rag."""
 
 from __future__ import annotations
 
@@ -14,21 +14,21 @@ class Config:
 
     model_name: str = field(
         default_factory=lambda: os.getenv(
-            "RAG_MCP_MODEL", "all-MiniLM-L6-v2"
+            "NOVA_RAG_MODEL", "all-MiniLM-L6-v2"
         )
     )
     chunk_max_lines: int = field(
-        default_factory=lambda: int(os.getenv("RAG_MCP_CHUNK_SIZE", "60"))
+        default_factory=lambda: int(os.getenv("NOVA_RAG_CHUNK_SIZE", "60"))
     )
     chunk_overlap_lines: int = field(
-        default_factory=lambda: int(os.getenv("RAG_MCP_CHUNK_OVERLAP", "10"))
+        default_factory=lambda: int(os.getenv("NOVA_RAG_CHUNK_OVERLAP", "10"))
     )
     batch_size: int = field(
-        default_factory=lambda: int(os.getenv("RAG_MCP_BATCH_SIZE", "64"))
+        default_factory=lambda: int(os.getenv("NOVA_RAG_BATCH_SIZE", "64"))
     )
     base_dir: Path = field(
         default_factory=lambda: Path(
-            os.getenv("RAG_MCP_DATA_DIR", str(Path.home() / ".rag-mcp"))
+            os.getenv("NOVA_RAG_DATA_DIR", str(Path.home() / ".nova-rag"))
         )
     )
 

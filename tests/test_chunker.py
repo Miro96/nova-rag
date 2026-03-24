@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from rag_mcp.chunker import Chunk, chunk_file, chunk_file_sliding, chunk_file_treesitter
+from nova_rag.chunker import Chunk, chunk_file, chunk_file_sliding, chunk_file_treesitter
 
 
 class TestTreeSitterChunker:

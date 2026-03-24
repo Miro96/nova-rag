@@ -49,6 +49,8 @@ class Store:
                 name TEXT,
                 start_line INTEGER NOT NULL,
                 end_line INTEGER NOT NULL,
+                byte_offset_start INTEGER NOT NULL DEFAULT 0,
+                byte_offset_end INTEGER NOT NULL DEFAULT 0,
                 chunk_type TEXT NOT NULL,
                 language TEXT NOT NULL,
                 content TEXT NOT NULL,
@@ -90,6 +92,18 @@ class Store:
             CREATE INDEX IF NOT EXISTS idx_imports_name ON imports(imported_name);
             CREATE INDEX IF NOT EXISTS idx_imports_module ON imports(module_path);
             CREATE INDEX IF NOT EXISTS idx_imports_file ON imports(file_path);
+
+            CREATE TABLE IF NOT EXISTS inheritance (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                child_name TEXT NOT NULL,
+                parent_name TEXT NOT NULL,
+                relation TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                line INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS idx_inherit_child ON inheritance(child_name);
+            CREATE INDEX IF NOT EXISTS idx_inherit_parent ON inheritance(parent_name);
+            CREATE INDEX IF NOT EXISTS idx_inherit_file ON inheritance(file_path);
         """)
         # FTS5 virtual table for keyword search
         # content sync: we manually keep it in sync
@@ -131,6 +145,7 @@ class Store:
 
         self._conn.execute("DELETE FROM chunks WHERE file_path = ?", (path,))
         self._conn.execute("DELETE FROM imports WHERE file_path = ?", (path,))
+        self._conn.execute("DELETE FROM inheritance WHERE file_path = ?", (path,))
         self._conn.execute("DELETE FROM files WHERE path = ?", (path,))
         self._conn.commit()
         return chunk_ids
@@ -153,13 +168,16 @@ class Store:
         chunk_ids = []
         for chunk in chunks:
             cursor = self._conn.execute(
-                """INSERT INTO chunks (file_path, name, start_line, end_line, chunk_type, language, content)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                """INSERT INTO chunks (file_path, name, start_line, end_line,
+                   byte_offset_start, byte_offset_end, chunk_type, language, content)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     chunk["file_path"],
                     chunk.get("name"),
                     chunk["start_line"],
                     chunk["end_line"],
+                    chunk.get("byte_offset_start", 0),
+                    chunk.get("byte_offset_end", 0),
                     chunk["chunk_type"],
                     chunk["language"],
                     chunk["content"],
@@ -456,17 +474,18 @@ class Store:
         symbols: list[dict],
         calls: list[dict],
         imports: list[dict],
+        inheritances: list[dict] | None = None,
     ) -> None:
         """Store graph data (symbols, calls, imports) for a file.
 
         Existing graph data for this file is removed first (symbols and calls
         cascade-delete with chunks; imports need explicit removal).
         """
-        # Symbols and calls FK-cascade from chunks, but we insert fresh ones
-        # Remove any orphaned symbols/calls for this file not linked to chunks
+        # Remove existing graph data for this file
         self._conn.execute("DELETE FROM symbols WHERE file_path = ?", (file_path,))
         self._conn.execute("DELETE FROM calls WHERE file_path = ?", (file_path,))
         self._conn.execute("DELETE FROM imports WHERE file_path = ?", (file_path,))
+        self._conn.execute("DELETE FROM inheritance WHERE file_path = ?", (file_path,))
 
         for sym in symbols:
             # Try to find the matching chunk by name + file
@@ -505,6 +524,13 @@ class Store:
             self._conn.execute(
                 "INSERT INTO imports (file_path, imported_name, module_path) VALUES (?, ?, ?)",
                 (imp["file_path"], imp["imported_name"], imp["module_path"]),
+            )
+
+        for inh in (inheritances or []):
+            self._conn.execute(
+                "INSERT INTO inheritance (child_name, parent_name, relation, file_path, line) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (inh["child_name"], inh["parent_name"], inh["relation"], inh["file_path"], inh.get("line", 0)),
             )
 
         self._conn.commit()
@@ -587,15 +613,172 @@ class Store:
             "snippet": row[7][:300] if row[7] else None,
         }
 
+    def get_hierarchy(self, class_name: str) -> dict:
+        """Get class hierarchy: parents (extends/implements) and children."""
+        parents = self._conn.execute(
+            """SELECT parent_name, relation, file_path, line
+               FROM inheritance WHERE child_name = ?
+               ORDER BY relation, parent_name""",
+            (class_name,),
+        ).fetchall()
+
+        children = self._conn.execute(
+            """SELECT child_name, relation, file_path, line
+               FROM inheritance WHERE parent_name = ?
+               ORDER BY relation, child_name""",
+            (class_name,),
+        ).fetchall()
+
+        return {
+            "name": class_name,
+            "parents": [
+                {"name": r[0], "relation": r[1], "file": r[2], "line": r[3]}
+                for r in parents
+            ],
+            "children": [
+                {"name": r[0], "relation": r[1], "file": r[2], "line": r[3]}
+                for r in children
+            ],
+        }
+
+    def get_deadcode(self, path_filter: str | None = None, limit: int = 50) -> list[dict]:
+        """Find symbols that are never called (dead code).
+
+        Returns functions/methods with zero callers and zero inheritance usage.
+        """
+        query = """
+            SELECT s.name, s.kind, s.file_path, s.line
+            FROM symbols s
+            WHERE s.name NOT IN (SELECT DISTINCT callee_name FROM calls)
+              AND s.kind IN ('function', 'method')
+              AND s.name NOT LIKE '\\_%' ESCAPE '\\'
+              AND s.name NOT IN ('main', '__init__', 'setUp', 'tearDown', 'test_%')
+        """
+        params: list = []
+        if path_filter:
+            query += " AND s.file_path LIKE ?"
+            params.append(f"%{path_filter}%")
+        query += " ORDER BY s.file_path, s.line LIMIT ?"
+        params.append(limit)
+
+        rows = self._conn.execute(query, params).fetchall()
+        return [
+            {"name": r[0], "kind": r[1], "file": r[2], "line": r[3]}
+            for r in rows
+        ]
+
+    def get_source(self, chunk_id: int) -> dict | None:
+        """Get full source code for a chunk via byte offset (O(1) retrieval).
+
+        If byte offsets are available, reads directly from the file at the exact position.
+        Falls back to content stored in SQLite.
+        """
+        row = self._conn.execute(
+            """SELECT file_path, name, start_line, end_line,
+                      byte_offset_start, byte_offset_end, content
+               FROM chunks WHERE id = ?""",
+            (chunk_id,),
+        ).fetchone()
+
+        if row is None:
+            return None
+
+        file_path, name, start_line, end_line, bo_start, bo_end, content = row
+
+        # Try O(1) byte-offset read from file
+        if bo_start > 0 and bo_end > bo_start:
+            try:
+                with open(file_path, "rb") as f:
+                    f.seek(bo_start)
+                    source = f.read(bo_end - bo_start).decode("utf-8", errors="replace")
+                return {
+                    "id": chunk_id,
+                    "file": file_path,
+                    "name": name,
+                    "start_line": start_line,
+                    "end_line": end_line,
+                    "source": source,
+                }
+            except (OSError, ValueError):
+                pass  # Fall back to stored content
+
+        return {
+            "id": chunk_id,
+            "file": file_path,
+            "name": name,
+            "start_line": start_line,
+            "end_line": end_line,
+            "source": content,
+        }
+
+    def get_impact(self, function_name: str, max_depth: int = 10) -> dict:
+        """Full transitive impact analysis — blast radius of changing a function.
+
+        Recursively walks the caller graph to find all transitively affected code.
+        """
+        visited: set[str] = set()
+        affected_files: set[str] = set()
+        affected_tests: list[str] = []
+        call_chains: list[list[str]] = []
+
+        def _walk(name: str, chain: list[str], depth: int) -> None:
+            if name in visited or depth > max_depth:
+                return
+            visited.add(name)
+
+            callers = self._conn.execute(
+                """SELECT DISTINCT c.caller_name, c.file_path
+                   FROM calls c WHERE c.callee_name = ?""",
+                (name,),
+            ).fetchall()
+
+            for caller_name, file_path in callers:
+                if caller_name is None:
+                    caller_name = "(top-level)"
+                affected_files.add(file_path)
+                new_chain = chain + [caller_name]
+
+                if caller_name.startswith("test") or "/test" in file_path:
+                    affected_tests.append(caller_name)
+
+                if depth == max_depth or caller_name == "(top-level)":
+                    call_chains.append(new_chain)
+                else:
+                    _walk(caller_name, new_chain, depth + 1)
+
+        _walk(function_name, [function_name], 0)
+
+        total_affected = len(visited) - 1  # Exclude the function itself
+        risk = "low"
+        if total_affected > 10:
+            risk = "high"
+        elif total_affected > 3:
+            risk = "medium"
+
+        return {
+            "function": function_name,
+            "direct_callers": len(self._conn.execute(
+                "SELECT DISTINCT caller_name FROM calls WHERE callee_name = ?",
+                (function_name,),
+            ).fetchall()),
+            "transitive_callers": total_affected,
+            "affected_files": sorted(affected_files),
+            "affected_tests": sorted(set(affected_tests)),
+            "risk": risk,
+            "sample_chains": call_chains[:10],
+        }
+
     def get_graph_stats(self) -> dict:
         """Return code graph statistics."""
         sym_count = self._conn.execute("SELECT COUNT(*) FROM symbols").fetchone()[0]
         call_count = self._conn.execute("SELECT COUNT(*) FROM calls").fetchone()[0]
         import_count = self._conn.execute("SELECT COUNT(*) FROM imports").fetchone()[0]
+        inherit_count = self._conn.execute("SELECT COUNT(*) FROM inheritance").fetchone()[0]
         return {
             "symbols": sym_count,
             "calls": call_count,
             "imports": import_count,
+            "inheritances": inherit_count,
         }
 
     # ── Stats & management ──
@@ -639,6 +822,7 @@ class Store:
             DELETE FROM calls;
             DELETE FROM symbols;
             DELETE FROM imports;
+            DELETE FROM inheritance;
             DELETE FROM chunks;
             DELETE FROM files;
         """)

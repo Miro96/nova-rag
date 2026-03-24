@@ -101,6 +101,8 @@ class Chunk:
     chunk_type: str  # e.g. "function_definition", "class_declaration", "block"
     language: str
     name: str | None = None  # Function/class name extracted from tree-sitter
+    byte_offset_start: int = 0
+    byte_offset_end: int = 0
 
 
 # Cache: extension → (Parser, node_types)
@@ -155,16 +157,19 @@ def _extract_nodes(
     node: tree_sitter.Node,
     target_types: set[str],
     source_bytes: bytes,
-) -> list[tuple[str, int, int, str, str | None]]:
-    """Recursively find target node types and return (content, start_line, end_line, type, name)."""
-    results: list[tuple[str, int, int, str, str | None]] = []
+) -> list[tuple[str, int, int, str, str | None, int, int]]:
+    """Recursively find target node types.
+
+    Returns (content, start_line, end_line, type, name, byte_start, byte_end).
+    """
+    results: list[tuple[str, int, int, str, str | None, int, int]] = []
 
     if node.type in target_types:
         start = node.start_point[0]
         end = node.end_point[0]
         text = source_bytes[node.start_byte : node.end_byte].decode("utf-8", errors="replace")
         name = _extract_name(node)
-        results.append((text, start + 1, end + 1, node.type, name))
+        results.append((text, start + 1, end + 1, node.type, name, node.start_byte, node.end_byte))
     else:
         for child in node.children:
             results.extend(_extract_nodes(child, target_types, source_bytes))
@@ -232,7 +237,7 @@ def chunk_file_treesitter(
             )
         )
 
-    for text, start, end, ntype, name in nodes:
+    for text, start, end, ntype, name, bo_start, bo_end in nodes:
         if text.strip():
             chunks.append(
                 Chunk(
@@ -243,6 +248,8 @@ def chunk_file_treesitter(
                     chunk_type=ntype,
                     language=lang,
                     name=name,
+                    byte_offset_start=bo_start,
+                    byte_offset_end=bo_end,
                 )
             )
     return chunks

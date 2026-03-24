@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from rag_mcp.store import Store
+from nova_rag.store import Store
 
 
 @pytest.fixture

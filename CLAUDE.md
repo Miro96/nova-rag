@@ -1,45 +1,44 @@
-# rag-mcp — Local RAG MCP Server
+# nova-rag — Code Intelligence MCP Server
 
-## Для пользователей: добавьте это в CLAUDE.md вашего проекта
-
-Скопируйте блок ниже в `CLAUDE.md` любого проекта, где подключён rag-mcp:
+## Для пользователей: добавьте в CLAUDE.md вашего проекта
 
 ```markdown
-## Code Search (rag-mcp)
+## Code Search (nova-rag)
 
-This project has a local RAG index for semantic code search. Use it:
+This project has a local code intelligence index. Use `code_search` — it auto-detects what you need:
 
-- **Before using Grep/Glob**, try `rag_search` first for conceptual/semantic queries (e.g. "error handling", "database setup", "auth flow"). It's faster and more accurate for these.
-- **Use Grep** for exact string matches (variable names, TODO comments, specific error messages).
-- **Use `rag_graph`** when you need to understand code relationships:
-  - `rag_graph(name="functionName", direction="callers")` — who calls this function?
-  - `rag_graph(name="functionName", direction="callees")` — what does it call?
-  - `rag_graph(name="moduleName", direction="importers")` — who imports this?
-- Search results include `callers` and `callees` context — use it to understand the full picture.
-- The index auto-updates via file watcher. If results seem stale, run `rag_index(force=true)`.
-- Use `language` filter when you know the target language: `rag_search(query="...", language="python")`.
-- Use `path_filter` to narrow search: `rag_search(query="...", path_filter="src/auth")`.
+- "where is payment processing?" → semantic search with graph context
+- "who calls handleAuth?" → call graph: all callers
+- "what does processData call?" → call graph: all callees
+- "who imports psycopg2?" → import graph
+- "dead code in src/auth" → unused function detection
+- "class hierarchy of UserService" → inheritance tree
+
+Search results include `callers`/`callees` — use them for full context.
+For exact string matches (TODOs, error messages), use Grep.
 ```
 
-## Для разработчиков rag-mcp
+## Для разработчиков nova-rag
 
 ### Сборка и тесты
 ```bash
 pip install -e ".[dev]"
-pytest tests/ -v
+pytest tests/ -v   # 84 tests
 ```
 
 ### Архитектура
-- `server.py` — MCP entry point (FastMCP), 5 tools
-- `indexer.py` — file discovery + chunking + embedding + graph extraction
-- `chunker.py` — tree-sitter AST parsing (7 languages) + sliding window fallback
-- `graph.py` — call graph extraction (symbols, calls, imports) from tree-sitter
-- `store.py` — FAISS vectors + SQLite (FTS5 + metadata + graph tables)
-- `searcher.py` — hybrid search (RRF) + graph enrichment
-- `watcher.py` — watchdog file watcher for auto-reindex
+- `server.py` — MCP entry point, 8 tools (code_search = smart router)
+- `searcher.py` — smart router + hybrid search + graph queries + deadcode
+- `indexer.py` — multithreaded: ThreadPoolExecutor для chunking/graph, sequential embedding
+- `chunker.py` — tree-sitter AST parsing (7 языков) + sliding window fallback
+- `graph.py` — symbols, calls, imports, inheritance extraction из tree-sitter AST
+- `store.py` — FAISS vectors + SQLite (FTS5 + graph tables + inheritance)
+- `watcher.py` — watchdog file watcher для auto-reindex
+- `config.py` — env var конфигурация
 
 ### Ключевые решения
-- Hybrid search через RRF (Reciprocal Rank Fusion) из FAISS + FTS5
-- Code graph хранится в SQLite (symbols, calls, imports таблицы)
-- Tree-sitter парсит и chunks, и graph параллельно при индексации
-- Модель предзагружается в background thread при старте сервера
+- Smart router парсит intent запроса regex-паттернами (EN + RU)
+- Hybrid search через RRF из FAISS + FTS5
+- Code graph в SQLite (symbols, calls, imports, inheritance таблицы)
+- Мультипоточность: file processing параллельно, embedding/store последовательно
+- Модель предзагружается в background thread при старте

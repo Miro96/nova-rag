@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from rag_mcp.config import Config
+from nova_rag.config import Config
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 

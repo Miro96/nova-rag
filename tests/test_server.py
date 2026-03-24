@@ -58,7 +58,12 @@ class TestServerTools:
     def test_rag_search_auto_indexes(self, sample_project, config):
         with patch("nova_rag.server._config", config):
             results = rag_search(query="greeting", path=str(sample_project))
-            assert isinstance(results, list)
+            # When auto-indexing triggers, returns dict with _indexing + results
+            # When already indexed, returns list directly
+            assert isinstance(results, (list, dict))
+            if isinstance(results, dict):
+                assert "_indexing" in results
+                assert "results" in results
 
     def test_rag_index_force(self, sample_project, config):
         with patch("nova_rag.server._config", config):

@@ -51,17 +51,23 @@ def _preload_model() -> None:
         logger.exception("Failed to pre-load embedding model")
 
 
-def _auto_index(project_path: str) -> None:
-    """Auto-index and start watcher if project is not indexed."""
+def _auto_index(project_path: str) -> list[str]:
+    """Auto-index and start watcher if project is not indexed.
+
+    Returns list of progress messages (empty if already indexed).
+    """
     status = get_status(project_path, _config)
     if not status.get("indexed") or status.get("total_chunks", 0) == 0:
-        logger.info("Auto-indexing project: %s", project_path)
-        index_project(
-            project_path,
-            config=_config,
-            on_progress=lambda msg: logger.info(msg),
-        )
+        messages: list[str] = []
+
+        def _progress(msg: str) -> None:
+            messages.append(msg)
+            logger.info(msg)
+
+        index_project(project_path, config=_config, on_progress=_progress)
         ensure_watching(project_path, _config)
+        return messages
+    return []
 
 
 # ── Smart router (primary tool) ──
@@ -98,9 +104,9 @@ def code_search(
         Results with an "intent" field showing what was detected.
     """
     project_path = path or os.getcwd()
-    _auto_index(project_path)
+    indexing_log = _auto_index(project_path)
 
-    return smart_search(
+    result = smart_search(
         query=query,
         project_path=project_path,
         config=_config,
@@ -108,6 +114,9 @@ def code_search(
         path_filter=path_filter,
         language=language,
     )
+    if indexing_log:
+        result["_indexing"] = indexing_log
+    return result
 
 
 # ── Specific tools (for direct access) ──
@@ -150,9 +159,12 @@ def rag_search(
         language: Filter by language.
     """
     project_path = path or os.getcwd()
-    _auto_index(project_path)
-    return search(query=query, project_path=project_path, config=_config,
-                  top_k=top_k, path_filter=path_filter, language=language)
+    indexing_log = _auto_index(project_path)
+    results = search(query=query, project_path=project_path, config=_config,
+                     top_k=top_k, path_filter=path_filter, language=language)
+    if indexing_log:
+        return {"_indexing": indexing_log, "results": results}
+    return results
 
 
 @mcp.tool()
@@ -171,9 +183,12 @@ def rag_graph(
         depth: Traversal depth (1=direct, 2=transitive).
     """
     project_path = path or os.getcwd()
-    _auto_index(project_path)
-    return graph_query(name=name, project_path=project_path, config=_config,
-                       direction=direction, depth=depth)
+    indexing_log = _auto_index(project_path)
+    result = graph_query(name=name, project_path=project_path, config=_config,
+                         direction=direction, depth=depth)
+    if indexing_log:
+        result["_indexing"] = indexing_log
+    return result
 
 
 @mcp.tool()
@@ -185,8 +200,11 @@ def rag_deadcode(path: str = "", path_filter: str | None = None) -> dict:
         path_filter: Substring filter on file paths.
     """
     project_path = path or os.getcwd()
-    _auto_index(project_path)
-    return deadcode_query(project_path, _config, path_filter=path_filter)
+    indexing_log = _auto_index(project_path)
+    result = deadcode_query(project_path, _config, path_filter=path_filter)
+    if indexing_log:
+        result["_indexing"] = indexing_log
+    return result
 
 
 @mcp.tool()
@@ -201,8 +219,11 @@ def rag_impact(name: str, path: str = "") -> dict:
         path: Project directory. Defaults to cwd.
     """
     project_path = path or os.getcwd()
-    _auto_index(project_path)
-    return impact_query(name, project_path, _config)
+    indexing_log = _auto_index(project_path)
+    result = impact_query(name, project_path, _config)
+    if indexing_log:
+        result["_indexing"] = indexing_log
+    return result
 
 
 @mcp.tool()
@@ -217,8 +238,11 @@ def rag_git_changes(path: str = "", since: str = "1 week ago", path_filter: str 
         path_filter: Scope to specific path (e.g. "src/auth").
     """
     project_path = path or os.getcwd()
-    _auto_index(project_path)
-    return git_changes_query(project_path, _config, since=since, path_filter=path_filter)
+    indexing_log = _auto_index(project_path)
+    result = git_changes_query(project_path, _config, since=since, path_filter=path_filter)
+    if indexing_log:
+        result["_indexing"] = indexing_log
+    return result
 
 
 @mcp.tool()

@@ -79,13 +79,17 @@ python3 --version
 # First install Homebrew if you don't have it:
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
-# Then install Python:
-brew install python@3.12
+# Then install Python and pipx:
+brew install python@3.12 pipx
+pipx ensurepath
 
-# Verify:
+# Restart your terminal, then verify:
 python3 --version   # Should show 3.12.x
-pip3 --version      # Should work
+pipx --version      # Should work
 ```
+
+> **Why pipx?** Modern macOS with Homebrew Python blocks `pip install` globally (PEP 668).
+> `pipx` installs CLI tools in isolated environments — the clean way to install nova-rag.
 </details>
 
 <details>
@@ -157,22 +161,31 @@ pip --version
 
 ### Step 1: Install nova-rag
 
+**macOS (recommended — uses pipx):**
 ```bash
-pip3 install nova-rag
+pipx install nova-rag
 ```
 
-This downloads ~2-3GB of dependencies (PyTorch, sentence-transformers, FAISS, tree-sitter). Takes 2-5 minutes depending on your internet speed.
-
-On Windows use `pip` instead of `pip3`:
+**Windows:**
 ```cmd
 pip install nova-rag
 ```
 
+**Linux:**
+```bash
+pip3 install nova-rag
+# If you get "externally-managed-environment" error:
+pip3 install --user nova-rag
+# Or use pipx:
+pipx install nova-rag
+```
+
+> Downloads ~2-3GB of dependencies (PyTorch, sentence-transformers, FAISS, tree-sitter).
+> Takes 2-5 minutes depending on your internet speed. This is a one-time cost.
+
 Verify installation:
 ```bash
 nova-rag --help
-# or
-python3 -m nova_rag
 ```
 
 ### Step 2: Connect to your AI assistant

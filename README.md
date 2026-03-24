@@ -204,9 +204,14 @@ pip install --upgrade nova-rag
 ```bash
 # macOS (pipx)
 pipx uninstall nova-rag
+# If pipx shows metadata errors, remove manually:
+rm -rf ~/.local/pipx/venvs/nova-rag
 
 # Windows / Linux (pip)
 pip uninstall nova-rag
+
+# Also remove index data (optional):
+rm -rf ~/.nova-rag
 ```
 
 ### Step 2: Connect to your AI assistant

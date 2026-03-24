@@ -191,6 +191,24 @@ Verify installation:
 nova-rag --help
 ```
 
+**Update to latest version:**
+```bash
+# macOS (pipx)
+pipx upgrade nova-rag
+
+# Windows / Linux (pip)
+pip install --upgrade nova-rag
+```
+
+**Uninstall:**
+```bash
+# macOS (pipx)
+pipx uninstall nova-rag
+
+# Windows / Linux (pip)
+pip uninstall nova-rag
+```
+
 ### Step 2: Connect to your AI assistant
 
 <details>

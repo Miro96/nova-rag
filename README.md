@@ -161,30 +161,32 @@ pip --version
 
 ### Step 1: Install nova-rag
 
-**macOS (recommended — uses pipx):**
+**macOS (copy-paste all 3 lines):**
 ```bash
-pipx install nova-rag
-
-# If you want to see download progress (recommended — install takes 2-5 min):
-pipx install nova-rag --verbose
+pipx install nova-rag --verbose && pipx ensurepath && echo "✅ Installed! Restart your terminal or run: source ~/.zshrc"
 ```
 
-**Windows:**
+> First install takes 2-5 minutes (~2-3GB of dependencies).
+> After it finishes, **restart your terminal** (or run `source ~/.zshrc`) so the `nova-rag` command is found.
+
+**Windows (PowerShell or CMD):**
 ```cmd
 pip install nova-rag
 ```
 
 **Linux:**
 ```bash
+# Option A: pipx (recommended)
+pipx install nova-rag --verbose && pipx ensurepath && echo "✅ Restart your terminal"
+
+# Option B: pip
 pip3 install nova-rag
 # If you get "externally-managed-environment" error:
 pip3 install --user nova-rag
-# Or use pipx:
-pipx install nova-rag
 ```
 
 > Downloads ~2-3GB of dependencies (PyTorch, sentence-transformers, FAISS, tree-sitter).
-> Takes 2-5 minutes depending on your internet speed. This is a one-time cost.
+> This is a one-time cost.
 
 Verify installation:
 ```bash
@@ -220,7 +222,15 @@ rm -rf ~/.nova-rag
 <summary><b>Claude Code</b> (recommended)</summary>
 
 ```bash
+# If you restarted your terminal after install:
 claude mcp add nova-rag -- nova-rag
+
+# If nova-rag is not found, use the full path:
+# macOS / Linux (pipx):
+claude mcp add nova-rag -- ~/.local/bin/nova-rag
+
+# Windows:
+claude mcp add nova-rag -- %USERPROFILE%\.local\bin\nova-rag.exe
 ```
 
 Done. Start asking questions about your code.

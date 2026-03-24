@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
 name = "nova-rag"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Local code intelligence MCP server — semantic search + code graph + impact analysis. Ask code in plain language."
 readme = "README.md"
 license = "MIT"
@@ -48,6 +48,13 @@ dev = [
 
 [project.scripts]
 nova-rag = "nova_rag.server:main"
+
+[tool.hatch.version]
+source = "vcs"
+raw-options = { version_scheme = "no-guess-dev" }
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/nova_rag/_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/nova_rag"]

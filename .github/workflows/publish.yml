@@ -1,17 +1,17 @@
 name: Publish to PyPI
 
 on:
-  release:
-    types: [published]
   push:
     tags:
-      - "v*"
+      - "v[0-9]*"
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -29,11 +29,11 @@ jobs:
   publish:
     needs: test
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -45,6 +45,13 @@ jobs:
 
       - name: Build package
         run: python -m build
+
+      - name: Verify version matches tag
+        run: |
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          PKG_VERSION=$(python -c "from importlib.metadata import version; print(version('nova-rag'))" 2>/dev/null || python -c "import re; print(re.search(r'Version: (.+)', open('src/nova_rag.egg-info/PKG-INFO').read()).group(1))" 2>/dev/null || echo "unknown")
+          echo "Tag version: $TAG_VERSION"
+          echo "Package version: $PKG_VERSION"
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

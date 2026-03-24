@@ -164,6 +164,9 @@ pip --version
 **macOS (recommended — uses pipx):**
 ```bash
 pipx install nova-rag
+
+# If you want to see download progress (recommended — install takes 2-5 min):
+pipx install nova-rag --verbose
 ```
 
 **Windows:**

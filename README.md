@@ -64,68 +64,138 @@ nova-rag: handleAuth() in src/auth/middleware.py:42
 
 ---
 
-## Prerequisites
+## Installation
 
-nova-rag requires **Python 3.11+**. Check if you have it:
+### Step 0: Prerequisites — Python 3.11+
+
+<details>
+<summary><b>macOS</b></summary>
 
 ```bash
+# Check if Python is installed
 python3 --version
+
+# If not installed or older than 3.11, install via Homebrew:
+# First install Homebrew if you don't have it:
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Then install Python:
+brew install python@3.12
+
+# Verify:
+python3 --version   # Should show 3.12.x
+pip3 --version      # Should work
+```
+</details>
+
+<details>
+<summary><b>Windows</b></summary>
+
+1. Download Python from [python.org/downloads](https://www.python.org/downloads/)
+2. Run the installer
+3. **IMPORTANT: Check "Add Python to PATH"** at the bottom of the first screen
+4. Click "Install Now"
+5. Open Command Prompt or PowerShell and verify:
+
+```cmd
+python --version     # Should show 3.12.x
+pip --version        # Should work
 ```
 
-If you don't have Python or it's older than 3.11:
+If `pip` is not found:
+```cmd
+python -m ensurepip --upgrade
+```
 
-| OS | Install Python |
-|---|---|
-| **macOS** | `brew install python@3.12` (install [Homebrew](https://brew.sh) first if needed) |
-| **Ubuntu/Debian** | `sudo apt update && sudo apt install python3 python3-pip python3-venv` |
-| **Windows** | Download from [python.org](https://www.python.org/downloads/) — check "Add to PATH" during install |
+> On Windows, use `python` and `pip` instead of `python3` and `pip3`.
+</details>
 
-Also make sure `pip` works:
+<details>
+<summary><b>Ubuntu / Debian</b></summary>
 
 ```bash
+sudo apt update
+sudo apt install python3 python3-pip python3-venv
+
+# Verify:
+python3 --version   # Should show 3.11+
 pip3 --version
 ```
 
-If `pip: command not found`, install it:
+If your distro has Python older than 3.11:
+```bash
+sudo add-apt-repository ppa:deadsnakes/ppa
+sudo apt update
+sudo apt install python3.12 python3.12-venv
+python3.12 -m ensurepip --upgrade
+```
+</details>
+
+<details>
+<summary><b>Fedora / RHEL / CentOS</b></summary>
 
 ```bash
-# macOS / Linux
-python3 -m ensurepip --upgrade
+sudo dnf install python3 python3-pip
 
-# Or on macOS with Homebrew
-brew install python@3.12   # pip3 comes included
+# Verify:
+python3 --version
+pip3 --version
+```
+</details>
+
+<details>
+<summary><b>Arch Linux</b></summary>
+
+```bash
+sudo pacman -S python python-pip
+
+# Verify:
+python --version
+pip --version
+```
+</details>
+
+### Step 1: Install nova-rag
+
+```bash
+pip3 install nova-rag
 ```
 
-> **Note:** On some systems use `pip3` instead of `pip`. All commands below work with both.
+This downloads ~2-3GB of dependencies (PyTorch, sentence-transformers, FAISS, tree-sitter). Takes 2-5 minutes depending on your internet speed.
 
-## Quick Start
-
-```
-┌──────────────────────────────────────────────────────────┐
-│  Step 1: Install nova-rag                                │
-│  $ pip3 install nova-rag                                 │
-│                                                          │
-│  (Downloads ~2-3GB of dependencies. Takes 2-5 minutes.)  │
-│                                                          │
-│  Step 2: Connect to Claude Code                          │
-│  $ claude mcp add nova-rag -- nova-rag                   │
-│                                                          │
-│  Step 3: Ask anything                                    │
-│  > "how is authentication handled?"                      │
-│  > "who calls the validate function?"                    │
-│  > "find dead code in src/auth"                          │
-│  > "class hierarchy of UserService"                      │
-└──────────────────────────────────────────────────────────┘
+On Windows use `pip` instead of `pip3`:
+```cmd
+pip install nova-rag
 ```
 
-### Connect to Claude Desktop
+Verify installation:
+```bash
+nova-rag --help
+# or
+python3 -m nova_rag
+```
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+### Step 2: Connect to your AI assistant
+
+<details>
+<summary><b>Claude Code</b> (recommended)</summary>
+
+```bash
+claude mcp add nova-rag -- nova-rag
+```
+
+Done. Start asking questions about your code.
+</details>
+
+<details>
+<summary><b>Claude Desktop — macOS</b></summary>
+
+Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
-    "rag": {
+    "nova-rag": {
       "command": "nova-rag",
       "args": []
     }
@@ -133,17 +203,91 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS)
 }
 ```
 
-### Connect to VS Code / Cursor
+Restart Claude Desktop. You should see the hammer icon.
+</details>
 
-VS Code — `.vscode/mcp.json`:
+<details>
+<summary><b>Claude Desktop — Windows</b></summary>
+
+Edit `%APPDATA%\Claude\claude_desktop_config.json`:
+
 ```json
-{ "servers": { "rag": { "command": "nova-rag" } } }
+{
+  "mcpServers": {
+    "nova-rag": {
+      "command": "nova-rag",
+      "args": []
+    }
+  }
+}
 ```
 
-Cursor — `~/.cursor/mcp.json`:
+Restart Claude Desktop. You should see the hammer icon.
+</details>
+
+<details>
+<summary><b>VS Code (GitHub Copilot / Continue)</b></summary>
+
+Add to `.vscode/mcp.json` in your workspace:
+
 ```json
-{ "mcpServers": { "rag": { "command": "nova-rag" } } }
+{
+  "servers": {
+    "nova-rag": {
+      "command": "nova-rag",
+      "args": []
+    }
+  }
+}
 ```
+</details>
+
+<details>
+<summary><b>Cursor</b></summary>
+
+Add to `~/.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "nova-rag": {
+      "command": "nova-rag",
+      "args": []
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><b>Windsurf</b></summary>
+
+Add to `~/.windsurf/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "nova-rag": {
+      "command": "nova-rag",
+      "args": []
+    }
+  }
+}
+```
+</details>
+
+### Step 3: Ask anything
+
+```
+> "how is authentication handled?"
+> "who calls the validate function?"
+> "find dead code in src/auth"
+> "class hierarchy of UserService"
+> "what changed this week?"
+> "impact of changing handleAuth?"
+```
+
+nova-rag auto-indexes your project on the first query. No manual setup needed.
 
 ---
 

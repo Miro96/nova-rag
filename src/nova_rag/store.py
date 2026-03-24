@@ -9,19 +9,58 @@ from pathlib import Path
 import faiss
 import numpy as np
 
-# Max lines to include in snippet previews (full code via rag_source)
-_SNIPPET_MAX_LINES = 5
+# Total character budget for all snippets in a response (~1K tokens)
+_TOTAL_SNIPPET_BUDGET = 4000
 
 
-def _truncate_snippet(content: str, max_lines: int = _SNIPPET_MAX_LINES) -> str:
-    """Truncate a code snippet to first N lines. Saves tokens."""
+def _truncate_snippet(content: str, max_chars: int = 0) -> str:
+    """Truncate a code snippet to fit within a character budget.
+
+    Args:
+        content: Full snippet text.
+        max_chars: Max characters. 0 = no limit (return full content).
+    """
     if not content:
         return content
-    lines = content.splitlines()
-    if len(lines) <= max_lines:
+    if max_chars <= 0 or len(content) <= max_chars:
         return content
-    truncated = "\n".join(lines[:max_lines])
-    return f"{truncated}\n... ({len(lines) - max_lines} more lines — use rag_source for full code)"
+    # Cut at line boundary
+    lines = content.splitlines()
+    result_lines = []
+    char_count = 0
+    for line in lines:
+        if char_count + len(line) + 1 > max_chars:
+            break
+        result_lines.append(line)
+        char_count += len(line) + 1
+    remaining = len(lines) - len(result_lines)
+    if remaining > 0:
+        return "\n".join(result_lines) + f"\n... ({remaining} more lines — use rag_source for full code)"
+    return content
+
+
+def _auto_truncate_snippets(results: list[dict]) -> list[dict]:
+    """Automatically truncate snippets based on total response size.
+
+    Small responses (< budget) → full code, no truncation.
+    Large responses → each snippet gets a proportional share of the budget.
+    """
+    if not results:
+        return results
+
+    total_chars = sum(len(r.get("snippet") or "") for r in results)
+
+    if total_chars <= _TOTAL_SNIPPET_BUDGET:
+        return results  # Small enough — return full code
+
+    # Distribute budget proportionally
+    budget_per_result = _TOTAL_SNIPPET_BUDGET // len(results)
+
+    for r in results:
+        if r.get("snippet"):
+            r["snippet"] = _truncate_snippet(r["snippet"], max_chars=budget_per_result)
+
+    return results
 
 
 class Store:
@@ -427,10 +466,10 @@ class Store:
                         "end_line": row[3],
                         "chunk_type": row[4],
                         "language": row[5],
-                        "snippet": _truncate_snippet(row[6]),
+                        "snippet": row[6],
                     }
                 )
-        return results
+        return _auto_truncate_snippets(results)
 
     def _get_filtered_ids(
         self, path_filter: str | None = None, language: str | None = None
@@ -476,10 +515,10 @@ class Store:
                         "end_line": row[3],
                         "chunk_type": row[4],
                         "language": row[5],
-                        "snippet": _truncate_snippet(row[6]),
+                        "snippet": row[6],
                     }
                 )
-        return results
+        return _auto_truncate_snippets(results)
 
     # ── Code graph ──
 
@@ -622,7 +661,7 @@ class Store:
             "chunk_id": row[4],
             "start_line": row[5],
             "end_line": row[6],
-            "snippet": _truncate_snippet(row[7]) if row[7] else None,
+            "snippet": _truncate_snippet(row[7], max_chars=1000) if row[7] else None,
         }
 
     def get_hierarchy(self, class_name: str) -> dict:

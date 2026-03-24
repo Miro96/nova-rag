@@ -71,13 +71,13 @@ def search(
     # Enrich with graph context
     for r in results:
         if r.get("name"):
-            callers = store.get_callers(r["name"], limit=5)
+            callers = store.get_callers(r["name"], limit=3)
             if callers:
                 r["callers"] = callers
         if r.get("id"):
             callees = store.get_callees(r["id"])
             if callees:
-                r["callees"] = callees
+                r["callees"] = callees[:3]
 
     store.close()
     return results

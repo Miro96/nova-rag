@@ -77,7 +77,7 @@ def _auto_index(project_path: str) -> list[str]:
 def code_search(
     query: str,
     path: str = "",
-    top_k: int = 10,
+    top_k: int = 5,
     path_filter: str | None = None,
     language: str | None = None,
 ) -> dict:

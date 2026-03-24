@@ -9,6 +9,20 @@ from pathlib import Path
 import faiss
 import numpy as np
 
+# Max lines to include in snippet previews (full code via rag_source)
+_SNIPPET_MAX_LINES = 5
+
+
+def _truncate_snippet(content: str, max_lines: int = _SNIPPET_MAX_LINES) -> str:
+    """Truncate a code snippet to first N lines. Saves tokens."""
+    if not content:
+        return content
+    lines = content.splitlines()
+    if len(lines) <= max_lines:
+        return content
+    truncated = "\n".join(lines[:max_lines])
+    return f"{truncated}\n... ({len(lines) - max_lines} more lines — use rag_source for full code)"
+
 
 class Store:
     """Manages the FAISS vector index, SQLite metadata, and FTS5 full-text index.
@@ -413,7 +427,7 @@ class Store:
                         "end_line": row[3],
                         "chunk_type": row[4],
                         "language": row[5],
-                        "snippet": row[6],
+                        "snippet": _truncate_snippet(row[6]),
                     }
                 )
         return results
@@ -451,6 +465,7 @@ class Store:
                 (cid,),
             ).fetchone()
             if row:
+                # Note: snippet is truncated. Use get_source(chunk_id) for full code.
                 results.append(
                     {
                         "id": cid,
@@ -461,7 +476,7 @@ class Store:
                         "end_line": row[3],
                         "chunk_type": row[4],
                         "language": row[5],
-                        "snippet": row[6],
+                        "snippet": _truncate_snippet(row[6]),
                     }
                 )
         return results
@@ -553,9 +568,6 @@ class Store:
                 "caller": r[0] or "(top-level)",
                 "file": r[1],
                 "line": r[2],
-                "start_line": r[3],
-                "end_line": r[4],
-                "snippet": r[5][:200] if r[5] else None,
             }
             for r in rows
         ]
@@ -610,7 +622,7 @@ class Store:
             "chunk_id": row[4],
             "start_line": row[5],
             "end_line": row[6],
-            "snippet": row[7][:300] if row[7] else None,
+            "snippet": _truncate_snippet(row[7]) if row[7] else None,
         }
 
     def get_hierarchy(self, class_name: str) -> dict:

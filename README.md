@@ -64,22 +64,58 @@ nova-rag: handleAuth() in src/auth/middleware.py:42
 
 ---
 
+## Prerequisites
+
+nova-rag requires **Python 3.11+**. Check if you have it:
+
+```bash
+python3 --version
+```
+
+If you don't have Python or it's older than 3.11:
+
+| OS | Install Python |
+|---|---|
+| **macOS** | `brew install python@3.12` (install [Homebrew](https://brew.sh) first if needed) |
+| **Ubuntu/Debian** | `sudo apt update && sudo apt install python3 python3-pip python3-venv` |
+| **Windows** | Download from [python.org](https://www.python.org/downloads/) — check "Add to PATH" during install |
+
+Also make sure `pip` works:
+
+```bash
+pip3 --version
+```
+
+If `pip: command not found`, install it:
+
+```bash
+# macOS / Linux
+python3 -m ensurepip --upgrade
+
+# Or on macOS with Homebrew
+brew install python@3.12   # pip3 comes included
+```
+
+> **Note:** On some systems use `pip3` instead of `pip`. All commands below work with both.
+
 ## Quick Start
 
 ```
-┌──────────────────────────────────────────────┐
-│  Step 1: Install                             │
-│  $ pip install nova-rag                       │
-│                                              │
-│  Step 2: Connect to Claude Code              │
-│  $ claude mcp add rag -- nova-rag             │
-│                                              │
-│  Step 3: Ask anything                        │
-│  > "how is authentication handled?"          │
-│  > "who calls the validate function?"        │
-│  > "find dead code in src/auth"              │
-│  > "class hierarchy of UserService"          │
-└──────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│  Step 1: Install nova-rag                                │
+│  $ pip3 install nova-rag                                 │
+│                                                          │
+│  (Downloads ~2-3GB of dependencies. Takes 2-5 minutes.)  │
+│                                                          │
+│  Step 2: Connect to Claude Code                          │
+│  $ claude mcp add nova-rag -- nova-rag                   │
+│                                                          │
+│  Step 3: Ask anything                                    │
+│  > "how is authentication handled?"                      │
+│  > "who calls the validate function?"                    │
+│  > "find dead code in src/auth"                          │
+│  > "class hierarchy of UserService"                      │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ### Connect to Claude Desktop

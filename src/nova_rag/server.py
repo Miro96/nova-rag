@@ -42,8 +42,11 @@ def _preload_model() -> None:
     try:
         from nova_rag.indexer import _get_model
 
-        _get_model(_config.model_name)
-        logger.info("Embedding model pre-loaded successfully")
+        logger.info("Pre-loading embedding model in background...")
+        _get_model(
+            _config.model_name,
+            on_progress=lambda msg: logger.info(msg),
+        )
     except Exception:
         logger.exception("Failed to pre-load embedding model")
 
@@ -52,7 +55,12 @@ def _auto_index(project_path: str) -> None:
     """Auto-index and start watcher if project is not indexed."""
     status = get_status(project_path, _config)
     if not status.get("indexed") or status.get("total_chunks", 0) == 0:
-        index_project(project_path, config=_config)
+        logger.info("Auto-indexing project: %s", project_path)
+        index_project(
+            project_path,
+            config=_config,
+            on_progress=lambda msg: logger.info(msg),
+        )
         ensure_watching(project_path, _config)
 
 

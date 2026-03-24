@@ -186,14 +186,33 @@ Shows parents (extends/implements) and children.
 
 Shows modified files, new/changed symbols, insertions/deletions.
 
-### First run
+### What to expect on first run
 
-On your first query to a new project:
-1. Embedding model downloads (~80MB) — once, then cached
-2. Project indexes (30-120s) — once, then incremental
-3. File watcher starts — auto-updates index on file changes
+**Installation** (`pip install nova-rag`):
+- Downloads ~2-3GB of dependencies (PyTorch, sentence-transformers, FAISS, tree-sitter)
+- Takes 2-5 minutes depending on your internet speed
+- This is a one-time cost
 
-All subsequent queries are instant.
+**First query to a new project** — nova-rag shows you what's happening:
+
+```
+[1/4] Loading embedding model 'all-MiniLM-L6-v2'... (first time downloads ~80MB)
+[1/4] Model loaded: all-MiniLM-L6-v2 (384-dim embeddings)
+[2/4] Scanning project: /path/to/your/project
+[2/4] Found 1200 files total — 1200 need indexing, 0 unchanged
+[3/4] Parsing 1200 files (tree-sitter + graph extraction)...
+[3/4] Parsing: 120/1200 files (10%) — 3.2s elapsed
+[3/4] Parsing: 600/1200 files (50%) — 8.1s elapsed
+[3/4] Parsing: 1200/1200 files (100%) — 14.5s elapsed
+[3/4] Parsed 1200 files — generating embeddings & storing...
+[4/4] Embedding & storing: 600/1200 files (50%), 4231 chunks — 25.3s elapsed
+[4/4] Embedding & storing: 1200/1200 files (100%), 8462 chunks — 42.1s elapsed
+[Done] Indexed 1200 files, 8462 chunks in 42.1s
+```
+
+**Subsequent queries** — instant (~100-300ms). Model is cached, index is incremental.
+
+**File watcher** auto-starts after indexing. When you save a file, only that file is re-indexed (milliseconds).
 
 ---
 

@@ -27,13 +27,23 @@ logger = logging.getLogger(__name__)
 _model = None
 
 
-def _get_model(model_name: str):
+def _get_model(model_name: str, on_progress: Callable[[str], None] | None = None):
     """Load the sentence-transformers model (lazy singleton)."""
     global _model
     if _model is None:
+        if on_progress:
+            on_progress(f"[1/4] Loading embedding model '{model_name}'... (first time downloads ~80MB)")
+        else:
+            logger.info("Loading embedding model '%s'...", model_name)
+
         from sentence_transformers import SentenceTransformer
 
         _model = SentenceTransformer(model_name)
+
+        if on_progress:
+            on_progress(f"[1/4] Model loaded: {model_name} ({_model.get_sentence_embedding_dimension()}-dim embeddings)")
+        else:
+            logger.info("Model loaded: %s", model_name)
     return _model
 
 
@@ -196,7 +206,10 @@ def index_project(
         raise ValueError(f"Not a directory: {project_path}")
 
     index_dir = config.ensure_index_dir(project_path)
-    model = _get_model(config.model_name)
+    start_time = time.time()
+
+    # Phase 1: Load model
+    model = _get_model(config.model_name, on_progress=on_progress)
     embedding_dim = model.get_sentence_embedding_dimension()
 
     store = Store(index_dir, embedding_dim)
@@ -204,27 +217,22 @@ def index_project(
     if force:
         store.reset()
         if on_progress:
-            on_progress("Force re-index: cleared existing data")
+            on_progress("[!] Force re-index: cleared existing data")
 
-    start_time = time.time()
-
-    # Collect files
+    # Phase 2: Scan files
     if on_progress:
-        on_progress("Scanning files...")
+        on_progress(f"[2/4] Scanning project: {project_path}")
     files = _collect_files(project_path, config)
 
-    # Track which files still exist (for cleanup)
     current_paths = {str(f) for f in files}
     indexed_paths = store.get_indexed_files()
 
-    # Remove files that no longer exist
     removed = indexed_paths - current_paths
     for path in removed:
         store.remove_file(path)
     if removed and on_progress:
-        on_progress(f"Removed {len(removed)} deleted files from index")
+        on_progress(f"[2/4] Cleaned up {len(removed)} deleted files from index")
 
-    # Determine which files need updating
     files_to_index = []
     skipped = 0
     for f in files:
@@ -237,26 +245,31 @@ def index_project(
 
     if on_progress:
         on_progress(
-            f"Found {len(files)} files, {len(files_to_index)} to index, {skipped} unchanged"
+            f"[2/4] Found {len(files)} files total — "
+            f"{len(files_to_index)} need indexing, {skipped} unchanged"
         )
 
     if not files_to_index:
+        duration = round(time.time() - start_time, 2)
+        if on_progress:
+            on_progress(f"[Done] Nothing to index. Took {duration}s")
         store.close()
         return {
             "files_indexed": 0,
             "chunks_created": 0,
             "skipped": skipped,
             "removed": len(removed),
-            "duration_sec": round(time.time() - start_time, 2),
+            "duration_sec": duration,
         }
 
-    # Phase 1: Parallel file processing (chunking + graph extraction)
+    # Phase 3: Parallel file processing (chunking + graph extraction)
+    total_to_index = len(files_to_index)
     if on_progress:
-        on_progress(f"Processing {len(files_to_index)} files in parallel...")
+        on_progress(f"[3/4] Parsing {total_to_index} files (tree-sitter + graph extraction)...")
 
     import os
     workers = max_workers or min(8, (os.cpu_count() or 4))
-    processed: list[tuple[str, dict]] = []  # (fhash, result)
+    processed: list[tuple[str, dict]] = []
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         future_to_hash = {}
@@ -264,8 +277,11 @@ def index_project(
             future = executor.submit(_process_file, file_path, fpath, config)
             future_to_hash[future] = fhash
 
+        done_count = 0
+        last_report = time.time()
         for future in as_completed(future_to_hash):
             fhash = future_to_hash[future]
+            done_count += 1
             try:
                 result = future.result()
                 if result is not None:
@@ -273,11 +289,25 @@ def index_project(
             except Exception:
                 logger.exception("Failed to process file")
 
-    if on_progress:
-        on_progress(f"Processed {len(processed)} files, creating embeddings...")
+            # Progress every 10 seconds or every 10%
+            now = time.time()
+            pct = round(done_count / total_to_index * 100)
+            if on_progress and (now - last_report >= 10 or pct % 10 == 0):
+                elapsed = round(now - start_time, 1)
+                on_progress(
+                    f"[3/4] Parsing: {done_count}/{total_to_index} files ({pct}%) — {elapsed}s elapsed"
+                )
+                last_report = now
 
-    # Phase 2: Batch embedding (sequential — model is not thread-safe)
+    if on_progress:
+        on_progress(f"[3/4] Parsed {len(processed)} files — "
+                    f"generating embeddings & storing...")
+
+    # Phase 4: Embedding + store (sequential)
     total_chunks = 0
+    total_processed = len(processed)
+    last_report = time.time()
+
     for i, (fhash, data) in enumerate(processed):
         texts = data["texts"]
         if not texts:
@@ -291,7 +321,6 @@ def index_project(
         )
         embeddings = np.array(embeddings, dtype=np.float32)
 
-        # Phase 3: Store (sequential — SQLite is not thread-safe)
         added = store.upsert_file(data["fpath"], fhash, data["chunks"], embeddings)
         total_chunks += added
 
@@ -304,14 +333,24 @@ def index_project(
                 data["inheritances"],
             )
 
-        if on_progress and (i + 1) % 50 == 0:
-            on_progress(f"Embedded {i + 1}/{len(processed)} files...")
+        # Progress every 10 seconds or every 10%
+        now = time.time()
+        pct = round((i + 1) / total_processed * 100)
+        if on_progress and (now - last_report >= 10 or (i + 1) == total_processed):
+            elapsed = round(now - start_time, 1)
+            on_progress(
+                f"[4/4] Embedding & storing: {i + 1}/{total_processed} files ({pct}%), "
+                f"{total_chunks} chunks — {elapsed}s elapsed"
+            )
+            last_report = now
 
     store.close()
     duration = round(time.time() - start_time, 2)
 
     if on_progress:
-        on_progress(f"Done: {len(processed)} files, {total_chunks} chunks in {duration}s")
+        on_progress(
+            f"[Done] Indexed {len(processed)} files, {total_chunks} chunks in {duration}s"
+        )
 
     return {
         "files_indexed": len(processed),

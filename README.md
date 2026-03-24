@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![MCP](https://img.shields.io/badge/MCP-compatible-green.svg)](https://modelcontextprotocol.io)
-[![Tests](https://img.shields.io/badge/tests-84%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-99%20passed-brightgreen.svg)]()
 [![Free](https://img.shields.io/badge/price-free%20forever-brightgreen.svg)]()
 
 > **This project is completely free and open source (MIT).** No paid tiers, no premium features, no "contact sales" — everything is included.
@@ -120,7 +120,7 @@ Once connected, you don't need to call tools manually. Just ask Claude Code in n
 ```
 > where is payment processing?
 > how is authentication handled?
-> покажи код подключения к базе данных
+> show me the database connection code
 ```
 
 nova-rag finds relevant functions even if you don't know their names. Results include callers/callees for full context.
@@ -129,7 +129,7 @@ nova-rag finds relevant functions even if you don't know their names. Results in
 
 ```
 > who calls handleAuth?
-> кто вызывает validate?
+> who uses validate?
 ```
 
 Shows every place in the codebase that calls this function, with file paths and line numbers.
@@ -138,7 +138,7 @@ Shows every place in the codebase that calls this function, with file paths and 
 
 ```
 > what does processData call?
-> что вызывает функция login внутри?
+> what functions does login call inside?
 ```
 
 Shows all functions called inside a given function.
@@ -147,14 +147,14 @@ Shows all functions called inside a given function.
 
 ```
 > who imports psycopg2?
-> кто импортирует модуль auth?
+> who imports the auth module?
 ```
 
 ### Find dead code
 
 ```
 > find unused functions
-> найди мёртвый код в src/
+> find unused code in src/
 ```
 
 Lists functions and methods that are never called anywhere.
@@ -163,7 +163,7 @@ Lists functions and methods that are never called anywhere.
 
 ```
 > what is the impact of changing validate?
-> что затронет изменение handleAuth?
+> what breaks if I change handleAuth?
 ```
 
 Shows direct callers, transitive callers, affected files, affected tests, and risk level.
@@ -172,7 +172,7 @@ Shows direct callers, transitive callers, affected files, affected tests, and ri
 
 ```
 > class hierarchy of UserService
-> наследование класса DataProcessor
+> inheritance of DataProcessor
 ```
 
 Shows parents (extends/implements) and children.
@@ -181,7 +181,7 @@ Shows parents (extends/implements) and children.
 
 ```
 > what changed this week?
-> что менялось в auth за последнюю неделю?
+> what changed in auth last week?
 ```
 
 Shows modified files, new/changed symbols, insertions/deletions.
@@ -521,7 +521,6 @@ One tool for everything. Auto-detects intent from your query.
   code_search("who imports psycopg2?")           → intent: importers
   code_search("dead code in src/auth")           → intent: deadcode
   code_search("class hierarchy of UserService")  → intent: hierarchy
-  code_search("кто вызывает validate?")          → intent: callers (RU)
 ```
 
 | Parameter | Type | Required | Default | Description |
@@ -712,14 +711,14 @@ For exact string matches (TODOs, error messages), use Grep as usual.
 git clone https://github.com/yourusername/nova-rag.git
 cd nova-rag
 pip install -e ".[dev]"
-pytest tests/ -v   # 84 tests
+pytest tests/ -v   # 99 tests
 ```
 
 ### Project Structure
 
 ```
   src/nova_rag/
-  ├── server.py      MCP server, 8 tools including smart router
+  ├── server.py      MCP server, 11 tools including smart router
   ├── searcher.py    Smart router, hybrid search, graph queries, dead code
   ├── indexer.py     Multithreaded file processing + embedding
   ├── chunker.py     Tree-sitter AST parsing (7 languages) + fallback
@@ -734,7 +733,7 @@ pytest tests/ -v   # 84 tests
 1. Fork the repo
 2. Create a feature branch
 3. Write tests for new functionality
-4. Ensure all 84 tests pass (`pytest tests/ -v`)
+4. Ensure all 99 tests pass (`pytest tests/ -v`)
 5. Submit a PR
 
 ## License

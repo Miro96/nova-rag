@@ -65,16 +65,16 @@ class TestSmartRouter:
         assert result["intent"] == "search"
         assert "results" in result
 
-    def test_russian_caller_query(self, sample_project, config):
+    def test_impact_intent(self, sample_project, config):
         from nova_rag.indexer import index_project
         index_project(sample_project, config=config)
 
-        result = smart_search("кто вызывает handle_error?", sample_project, config=config)
-        assert result["intent"] == "callers"
+        result = smart_search("what is the impact of changing handle_error?", sample_project, config=config)
+        assert result["intent"] == "impact"
 
-    def test_russian_deadcode_query(self, sample_project, config):
+    def test_git_changes_intent(self, sample_project, config):
         from nova_rag.indexer import index_project
         index_project(sample_project, config=config)
 
-        result = smart_search("найди мёртвый код", sample_project, config=config)
-        assert result["intent"] == "deadcode"
+        result = smart_search("what changed this week?", sample_project, config=config)
+        assert result["intent"] == "git_changes"

@@ -199,46 +199,45 @@ def git_changes_query(
 # ── Smart Router ──
 
 _CALLER_PATTERNS = re.compile(
-    r"(who|what|кто|что)\s+(calls?|вызывает|uses?|использует)|"
-    r"callers?\s+of|"
-    r"(вызывающи[еx]|вызовы)\s",
+    r"(who|what)\s+(calls?|uses?|invokes?)|"
+    r"callers?\s+of",
     re.IGNORECASE,
 )
 
 _CALLEE_PATTERNS = re.compile(
-    r"(what|что)\s+(does|делает).*call|"
+    r"(what)\s+(does).*call|"
     r"callees?\s+of|"
-    r"(зависимост[иь]|depends?\s+on|вызывает\s+внутри)",
+    r"depends?\s+on",
     re.IGNORECASE,
 )
 
 _IMPORT_PATTERNS = re.compile(
-    r"(who|кто)\s+(imports?|импортирует|uses?\s+module)|"
+    r"(who)\s+(imports?|uses?\s+module)|"
     r"importers?\s+of",
     re.IGNORECASE,
 )
 
 _DEADCODE_PATTERNS = re.compile(
-    r"(dead\s*code|unused|мёртвый\s*код|неиспользуем|не\s*используется)",
+    r"(dead\s*code|unused\s+(function|method|code)|unused)",
     re.IGNORECASE,
 )
 
 _HIERARCHY_PATTERNS = re.compile(
-    r"(class\s+hierarch|наследовани[ея]|extends?|implements?|"
-    r"parent\s+class|child\s+class|подклассы|суперкласс)",
+    r"(class\s+hierarch|inheritance|extends?|implements?|"
+    r"parent\s+class|child\s+class|subclass|superclass)",
     re.IGNORECASE,
 )
 
 _IMPACT_PATTERNS = re.compile(
-    r"(impact|blast\s*radius|что\s+сломается|what\s+breaks?|"
-    r"affected|затронет|если\s+(изменить|изменю|поменять))",
+    r"(impact|blast\s*radius|what\s+breaks?|"
+    r"affected|what\s+happens?\s+if\s+(i\s+)?(change|modify|refactor))",
     re.IGNORECASE,
 )
 
 _GIT_CHANGE_PATTERNS = re.compile(
-    r"(what\s+changed|что\s+менялось|что\s+изменилось|recent\s+changes?|"
-    r"git\s+(changes?|log|history)|последние\s+изменения|"
-    r"changed\s+(this|last|in)\s+|менялось\s+(за|в|на)\s+)",
+    r"(what\s+changed|recent\s+changes?|"
+    r"git\s+(changes?|log|history)|"
+    r"changed\s+(this|last|in)\s+)",
     re.IGNORECASE,
 )
 
@@ -259,8 +258,7 @@ def _extract_symbol_name(query: str) -> str | None:
         cleaned = re.sub(r'[^\w]', '', w)
         if cleaned and not cleaned.lower() in (
             "who", "what", "calls", "callers", "callees", "uses", "of", "the",
-            "кто", "что", "вызывает", "использует", "из", "в",
-            "function", "class", "method", "module",
+            "function", "class", "method", "module", "does", "is", "are",
         ):
             return cleaned
     return None
@@ -343,16 +341,16 @@ def smart_search(
         # Try to extract time range from query
         since = "1 week ago"
         time_match = re.search(
-            r"(\d+)\s*(day|week|month|день|недел|месяц)", query, re.IGNORECASE
+            r"(\d+)\s*(day|week|month)", query, re.IGNORECASE
         )
         if time_match:
             n = time_match.group(1)
             unit = time_match.group(2).lower()
-            if unit.startswith(("day", "день")):
+            if unit.startswith("day"):
                 since = f"{n} days ago"
-            elif unit.startswith(("week", "недел")):
+            elif unit.startswith("week"):
                 since = f"{n} weeks ago"
-            elif unit.startswith(("month", "месяц")):
+            elif unit.startswith("month"):
                 since = f"{n} months ago"
         return {
             "intent": "git_changes",

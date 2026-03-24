@@ -1,6 +1,6 @@
 # nova-rag — Code Intelligence MCP Server
 
-## Для пользователей: добавьте в CLAUDE.md вашего проекта
+## For users: add to your project's CLAUDE.md
 
 ```markdown
 ## Code Search (nova-rag)
@@ -13,32 +13,36 @@ This project has a local code intelligence index. Use `code_search` — it auto-
 - "who imports psycopg2?" → import graph
 - "dead code in src/auth" → unused function detection
 - "class hierarchy of UserService" → inheritance tree
+- "impact of changing validate" → blast radius analysis
+- "what changed this week?" → git change intelligence
 
 Search results include `callers`/`callees` — use them for full context.
 For exact string matches (TODOs, error messages), use Grep.
 ```
 
-## Для разработчиков nova-rag
+## For nova-rag developers
 
-### Сборка и тесты
+### Build and test
 ```bash
 pip install -e ".[dev]"
-pytest tests/ -v   # 84 tests
+pytest tests/ -v   # 99 tests
 ```
 
-### Архитектура
-- `server.py` — MCP entry point, 8 tools (code_search = smart router)
-- `searcher.py` — smart router + hybrid search + graph queries + deadcode
-- `indexer.py` — multithreaded: ThreadPoolExecutor для chunking/graph, sequential embedding
-- `chunker.py` — tree-sitter AST parsing (7 языков) + sliding window fallback
-- `graph.py` — symbols, calls, imports, inheritance extraction из tree-sitter AST
+### Architecture
+- `server.py` — MCP entry point, 11 tools (code_search = smart router)
+- `searcher.py` — smart router + hybrid search + graph queries + deadcode + impact
+- `indexer.py` — multithreaded: ThreadPoolExecutor for chunking/graph, sequential embedding
+- `chunker.py` — tree-sitter AST parsing (7 languages) + sliding window fallback
+- `graph.py` — symbols, calls, imports, inheritance extraction from tree-sitter AST
+- `git_intel.py` — git change intelligence mapped to code graph
 - `store.py` — FAISS vectors + SQLite (FTS5 + graph tables + inheritance)
-- `watcher.py` — watchdog file watcher для auto-reindex
-- `config.py` — env var конфигурация
+- `watcher.py` — watchdog file watcher for auto-reindex
+- `config.py` — env var configuration
 
-### Ключевые решения
-- Smart router парсит intent запроса regex-паттернами (EN + RU)
-- Hybrid search через RRF из FAISS + FTS5
-- Code graph в SQLite (symbols, calls, imports, inheritance таблицы)
-- Мультипоточность: file processing параллельно, embedding/store последовательно
-- Модель предзагружается в background thread при старте
+### Key decisions
+- Smart router detects intent from query via regex patterns
+- Hybrid search via RRF (Reciprocal Rank Fusion) from FAISS + FTS5
+- Code graph stored in SQLite (symbols, calls, imports, inheritance tables)
+- Impact analysis: recursive transitive caller graph traversal
+- Multithreading: file processing in parallel, embedding/store sequential
+- Embedding model pre-loaded in background thread at startup

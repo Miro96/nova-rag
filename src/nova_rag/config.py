@@ -35,63 +35,91 @@ class Config:
     # Directories and extensions to always skip
     excluded_dirs: set[str] = field(
         default_factory=lambda: {
+            # Version control
             ".git",
+            ".svn",
+            ".hg",
+            # Dependencies
             "node_modules",
+            "vendor",
+            "third_party",
+            "external",
+            "packages",
+            # Python
             "__pycache__",
             ".venv",
             "venv",
             ".mypy_cache",
             ".pytest_cache",
             ".tox",
+            ".eggs",
+            # Build output
             "dist",
             "build",
-            ".eggs",
-            ".next",
-            ".nuxt",
+            "out",
             "target",
             "bin",
             "obj",
+            ".next",
+            ".nuxt",
+            ".output",
+            # Migrations (auto-generated SQL)
+            "migrations",
+            "Migrations",
+            # IDE
+            ".idea",
+            ".vscode",
+            # Coverage / reports
+            "coverage",
+            "htmlcov",
+            ".nyc_output",
         }
     )
     excluded_extensions: set[str] = field(
         default_factory=lambda: {
-            ".pyc",
-            ".pyo",
-            ".so",
-            ".dylib",
-            ".dll",
-            ".exe",
-            ".o",
-            ".a",
-            ".class",
-            ".jar",
-            ".war",
-            ".whl",
-            ".egg",
+            # Compiled / binary
+            ".pyc", ".pyo", ".so", ".dylib", ".dll", ".exe",
+            ".o", ".a", ".class", ".jar", ".war", ".whl", ".egg",
+            # Lock files
             ".lock",
-            ".png",
-            ".jpg",
-            ".jpeg",
-            ".gif",
-            ".ico",
-            ".svg",
-            ".woff",
-            ".woff2",
-            ".ttf",
-            ".eot",
-            ".mp3",
-            ".mp4",
-            ".zip",
-            ".tar",
-            ".gz",
-            ".bz2",
-            ".7z",
-            ".rar",
-            ".pdf",
-            ".doc",
-            ".docx",
-            ".xls",
-            ".xlsx",
+            # Images
+            ".png", ".jpg", ".jpeg", ".gif", ".ico", ".svg",
+            ".webp", ".bmp", ".tiff",
+            # Fonts
+            ".woff", ".woff2", ".ttf", ".eot", ".otf",
+            # Media
+            ".mp3", ".mp4", ".avi", ".mov", ".webm",
+            # Archives
+            ".zip", ".tar", ".gz", ".bz2", ".7z", ".rar", ".xz",
+            # Documents
+            ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".pptx",
+            # Minified / bundled (auto-generated, duplicates source)
+            ".min.js", ".min.css",
+            ".bundle.js", ".chunk.js",
+            # Source maps
+            ".map",
+            # Auto-generated code
+            ".designer.cs", ".g.cs",
+            # Data files
+            ".sqlite", ".db", ".sqlite3",
+            ".csv", ".parquet", ".arrow",
+        }
+    )
+    excluded_filenames: set[str] = field(
+        default_factory=lambda: {
+            # Lock files (exact names)
+            "package-lock.json",
+            "yarn.lock",
+            "pnpm-lock.yaml",
+            "Pipfile.lock",
+            "poetry.lock",
+            "composer.lock",
+            "Gemfile.lock",
+            "Cargo.lock",
+            "go.sum",
+            # Auto-generated
+            ".DS_Store",
+            "Thumbs.db",
         }
     )
 

@@ -86,6 +86,15 @@ def _collect_files(
         if path.suffix.lower() in config.excluded_extensions:
             continue
 
+        # Check excluded filenames
+        if path.name in config.excluded_filenames:
+            continue
+
+        # Check multi-suffix extensions (.min.js, .bundle.js, .g.cs, etc.)
+        name_lower = path.name.lower()
+        if any(name_lower.endswith(ext) for ext in config.excluded_extensions if len(ext) > 4):
+            continue
+
         # Check .gitignore
         rel = str(path.relative_to(project_path))
         if gitignore_spec and gitignore_spec.match_file(rel):

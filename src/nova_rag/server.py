@@ -51,23 +51,23 @@ def _preload_model() -> None:
         logger.exception("Failed to pre-load embedding model")
 
 
-def _auto_index(project_path: str) -> list[str]:
+def _auto_index(project_path: str) -> str | None:
     """Auto-index and start watcher if project is not indexed.
 
-    Returns list of progress messages (empty if already indexed).
+    Returns a short summary string, or None if already indexed.
     """
     status = get_status(project_path, _config)
     if not status.get("indexed") or status.get("total_chunks", 0) == 0:
-        messages: list[str] = []
+        last_msg = ["Indexing..."]
 
         def _progress(msg: str) -> None:
-            messages.append(msg)
+            last_msg[0] = msg
             logger.info(msg)
 
         index_project(project_path, config=_config, on_progress=_progress)
         ensure_watching(project_path, _config)
-        return messages
-    return []
+        return last_msg[0]  # Only return final "[Done] ..." message
+    return None
 
 
 # ── Smart router (primary tool) ──

@@ -9,8 +9,10 @@ from pathlib import Path
 import faiss
 import numpy as np
 
-# Total character budget for all snippets in a response (~1K tokens)
+# Total character budget for entire response (~2K tokens max)
 _TOTAL_SNIPPET_BUDGET = 4000
+# Hard cap: never return more than this many chars total per search
+_HARD_RESPONSE_CAP = 8000
 
 
 def _truncate_snippet(content: str, max_chars: int = 0) -> str:
@@ -44,6 +46,7 @@ def _auto_truncate_snippets(results: list[dict]) -> list[dict]:
 
     Small responses (< budget) → full code, no truncation.
     Large responses → each snippet gets a proportional share of the budget.
+    Also enforces hard cap on total response size.
     """
     if not results:
         return results
@@ -55,10 +58,26 @@ def _auto_truncate_snippets(results: list[dict]) -> list[dict]:
 
     # Distribute budget proportionally
     budget_per_result = _TOTAL_SNIPPET_BUDGET // len(results)
+    # Minimum 200 chars per snippet (signature + first few lines)
+    budget_per_result = max(budget_per_result, 200)
 
     for r in results:
         if r.get("snippet"):
             r["snippet"] = _truncate_snippet(r["snippet"], max_chars=budget_per_result)
+
+    # Hard cap: if still too large, drop excess results
+    total = sum(len(str(r)) for r in results)
+    if total > _HARD_RESPONSE_CAP:
+        capped = []
+        running = 0
+        for r in results:
+            size = len(str(r))
+            if running + size > _HARD_RESPONSE_CAP:
+                break
+            capped.append(r)
+            running += size
+        if capped:
+            return capped
 
     return results
 

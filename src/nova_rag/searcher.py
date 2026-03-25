@@ -68,16 +68,16 @@ def search(
         language=language,
     )
 
-    # Enrich with graph context
-    for r in results:
+    # Enrich top results with compact graph context (names only, saves tokens)
+    for r in results[:5]:
         if r.get("name"):
             callers = store.get_callers(r["name"], limit=3)
             if callers:
-                r["callers"] = callers
+                r["called_by"] = [c["caller"] for c in callers]
         if r.get("id"):
             callees = store.get_callees(r["id"])
             if callees:
-                r["callees"] = callees[:3]
+                r["calls"] = [c["name"] for c in callees[:3]]
 
     store.close()
     return results

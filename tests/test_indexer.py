@@ -27,8 +27,10 @@ class TestIndexer:
     def test_incremental_after_change(self, sample_project, config):
         index_project(sample_project, config=config)
 
-        # Modify a file
-        (sample_project / "main.py").write_text("def new_function(): pass\n")
+        # Modify a file (must be >= 3 lines to pass min chunk filter)
+        (sample_project / "main.py").write_text(
+            "def new_function():\n    \"\"\"A new function.\"\"\"\n    return 42\n"
+        )
 
         r2 = index_project(sample_project, config=config)
         assert r2["files_indexed"] == 1  # Only the changed file

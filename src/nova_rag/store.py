@@ -41,31 +41,55 @@ def _truncate_snippet(content: str, max_chars: int = 0) -> str:
     return content
 
 
-def _auto_truncate_snippets(results: list[dict]) -> list[dict]:
-    """Automatically truncate snippets based on total response size.
+def _dedup_results(results: list[dict], max_per_file: int = 2) -> list[dict]:
+    """Remove duplicate results from the same file.
 
-    Small responses (< budget) → full code, no truncation.
-    Large responses → each snippet gets a proportional share of the budget.
-    Also enforces hard cap on total response size.
+    Keeps at most max_per_file results per file path.
+    Preserves ranking order (higher-scored results kept first).
     """
     if not results:
         return results
 
+    seen: dict[str, int] = {}  # file_path → count
+    deduped = []
+    for r in results:
+        fp = r.get("file", "")
+        count = seen.get(fp, 0)
+        if count < max_per_file:
+            deduped.append(r)
+            seen[fp] = count + 1
+    return deduped
+
+
+def _auto_truncate_snippets(results: list[dict]) -> list[dict]:
+    """Dedup + smart truncation based on total response size.
+
+    1. Dedup: max 2 results per file
+    2. Small responses (< budget) → full code, no truncation
+    3. Large responses → each snippet gets proportional budget share
+    4. Hard cap: drop excess results if still too large
+    """
+    if not results:
+        return results
+
+    # Step 1: Dedup
+    results = _dedup_results(results)
+
+    # Step 2: Check if truncation needed
     total_chars = sum(len(r.get("snippet") or "") for r in results)
 
     if total_chars <= _TOTAL_SNIPPET_BUDGET:
         return results  # Small enough — return full code
 
-    # Distribute budget proportionally
+    # Step 3: Distribute budget proportionally
     budget_per_result = _TOTAL_SNIPPET_BUDGET // len(results)
-    # Minimum 200 chars per snippet (signature + first few lines)
     budget_per_result = max(budget_per_result, 200)
 
     for r in results:
         if r.get("snippet"):
             r["snippet"] = _truncate_snippet(r["snippet"], max_chars=budget_per_result)
 
-    # Hard cap: if still too large, drop excess results
+    # Step 4: Hard cap
     total = sum(len(str(r)) for r in results)
     if total > _HARD_RESPONSE_CAP:
         capped = []

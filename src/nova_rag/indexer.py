@@ -133,6 +133,18 @@ def _process_file(
     if not chunks:
         return None
 
+    # Filter out tiny chunks (getters, setters, one-liners) — not worth indexing
+    # Keep file_header chunks regardless of size
+    _MIN_CHUNK_LINES = 3
+    chunks = [
+        c for c in chunks
+        if c.chunk_type == "file_header"
+        or c.chunk_type == "block"
+        or (c.end_line - c.start_line + 1) >= _MIN_CHUNK_LINES
+    ]
+    if not chunks:
+        return None
+
     # Extract code graph
     ext = Path(fpath).suffix.lower()
     symbols, calls, imports, inheritances = extract_graph(fpath, content, ext)

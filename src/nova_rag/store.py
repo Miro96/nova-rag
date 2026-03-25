@@ -10,9 +10,9 @@ import faiss
 import numpy as np
 
 # Total character budget for entire response (~2K tokens max)
-_TOTAL_SNIPPET_BUDGET = 4000
+_TOTAL_SNIPPET_BUDGET = 15000
 # Hard cap: never return more than this many chars total per search
-_HARD_RESPONSE_CAP = 8000
+_HARD_RESPONSE_CAP = 30000
 
 
 def _truncate_snippet(content: str, max_chars: int = 0) -> str:

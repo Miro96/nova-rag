@@ -86,6 +86,115 @@ _LANGUAGE_CONFIGS: dict[str, tuple[str, str, set[str]]] = {
             "enum_declaration",
         },
     ),
+    ".kt": (
+        "tree_sitter_kotlin",
+        "kotlin",
+        {
+            "function_declaration",
+            "class_declaration",
+            "object_declaration",
+            "interface_declaration",
+        },
+    ),
+    ".kts": (
+        "tree_sitter_kotlin",
+        "kotlin",
+        {
+            "function_declaration",
+            "class_declaration",
+            "object_declaration",
+        },
+    ),
+    ".swift": (
+        "tree_sitter_swift",
+        "swift",
+        {
+            "function_declaration",
+            "class_declaration",
+            "protocol_declaration",
+            "struct_declaration",
+            "enum_declaration",
+        },
+    ),
+    ".php": (
+        "tree_sitter_php",
+        "php",
+        {
+            "function_definition",
+            "method_declaration",
+            "class_declaration",
+            "interface_declaration",
+            "trait_declaration",
+        },
+    ),
+    ".rb": (
+        "tree_sitter_ruby",
+        "ruby",
+        {
+            "method",
+            "singleton_method",
+            "class",
+            "module",
+        },
+    ),
+    ".c": (
+        "tree_sitter_c",
+        "c",
+        {
+            "function_definition",
+            "struct_specifier",
+            "enum_specifier",
+        },
+    ),
+    ".h": (
+        "tree_sitter_c",
+        "c",
+        {
+            "function_definition",
+            "struct_specifier",
+            "enum_specifier",
+            "declaration",
+        },
+    ),
+    ".cpp": (
+        "tree_sitter_cpp",
+        "cpp",
+        {
+            "function_definition",
+            "class_specifier",
+            "struct_specifier",
+            "enum_specifier",
+            "namespace_definition",
+        },
+    ),
+    ".hpp": (
+        "tree_sitter_cpp",
+        "cpp",
+        {
+            "function_definition",
+            "class_specifier",
+            "struct_specifier",
+        },
+    ),
+    ".cc": (
+        "tree_sitter_cpp",
+        "cpp",
+        {
+            "function_definition",
+            "class_specifier",
+            "struct_specifier",
+        },
+    ),
+    ".scala": (
+        "tree_sitter_scala",
+        "scala",
+        {
+            "function_definition",
+            "class_definition",
+            "object_definition",
+            "trait_definition",
+        },
+    ),
 }
 
 # Node types that commonly contain a name child
@@ -187,7 +296,9 @@ def _get_file_header(content: str, max_lines: int = 30) -> str | None:
         # Collect imports, comments, docstrings, empty lines
         if (
             stripped.startswith(("import ", "from ", "#", "//", "/*", " *", "*/", "using ",
-                                "package ", "require(", "require ", "export "))
+                                "package ", "require(", "require ", "export ",
+                                "#include ", "#pragma ", "use ", "mod ",
+                                "require_relative ", "require '", 'require "'))
             or stripped.startswith('"""')
             or stripped.startswith("'''")
             or not stripped
@@ -310,6 +421,8 @@ _EXT_LANG: dict[str, str] = {
     ".cpp": "cpp",
     ".h": "c",
     ".hpp": "cpp",
+    ".cc": "cpp",
+    ".kts": "kotlin",
     ".lua": "lua",
     ".sh": "shell",
     ".bash": "shell",

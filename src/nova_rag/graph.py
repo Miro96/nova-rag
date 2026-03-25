@@ -60,6 +60,13 @@ _CALL_TYPES: dict[str, set[str]] = {
     "go": {"call_expression"},
     "rust": {"call_expression"},
     "java": {"method_invocation"},
+    "kotlin": {"call_expression"},
+    "swift": {"call_expression"},
+    "php": {"function_call_expression", "member_call_expression", "scoped_call_expression"},
+    "ruby": {"call", "method_call"},
+    "c": {"call_expression"},
+    "cpp": {"call_expression"},
+    "scala": {"call_expression"},
 }
 
 # Node types that represent import statements
@@ -72,6 +79,13 @@ _IMPORT_TYPES: dict[str, set[str]] = {
     "go": {"import_declaration", "import_spec"},
     "rust": {"use_declaration"},
     "java": {"import_declaration"},
+    "kotlin": {"import_header"},
+    "swift": {"import_declaration"},
+    "php": {"namespace_use_declaration"},
+    "ruby": {"call"},  # require/require_relative are calls in Ruby
+    "c": {"preproc_include"},
+    "cpp": {"preproc_include"},
+    "scala": {"import_declaration"},
 }
 
 # Node types that define functions/methods/classes
@@ -115,6 +129,46 @@ _DEFINITION_TYPES: dict[str, dict[str, str]] = {
         "impl_item": "class",
         "struct_item": "class",
         "trait_item": "class",
+    },
+    "kotlin": {
+        "function_declaration": "function",
+        "class_declaration": "class",
+        "object_declaration": "class",
+        "interface_declaration": "class",
+    },
+    "swift": {
+        "function_declaration": "function",
+        "class_declaration": "class",
+        "protocol_declaration": "class",
+        "struct_declaration": "class",
+        "enum_declaration": "class",
+    },
+    "php": {
+        "function_definition": "function",
+        "method_declaration": "method",
+        "class_declaration": "class",
+        "interface_declaration": "class",
+        "trait_declaration": "class",
+    },
+    "ruby": {
+        "method": "function",
+        "singleton_method": "function",
+        "class": "class",
+        "module": "class",
+    },
+    "c": {
+        "function_definition": "function",
+    },
+    "cpp": {
+        "function_definition": "function",
+        "class_specifier": "class",
+        "struct_specifier": "class",
+    },
+    "scala": {
+        "function_definition": "function",
+        "class_definition": "class",
+        "object_definition": "class",
+        "trait_definition": "class",
     },
     "java": {
         "method_declaration": "method",
@@ -229,6 +283,28 @@ def _extract_call_name(node: tree_sitter.Node, lang: str) -> str | None:
                 return _get_node_text(child)
         return None
 
+    # Generic fallback for kotlin, swift, scala, c, cpp, php, ruby
+    # Most use call_expression with function child or first identifier
+    func = node.child_by_field_name("function")
+    if func is None:
+        for child in node.children:
+            if child.type in ("identifier", "simple_identifier", "name"):
+                return _get_node_text(child)
+            if child.type in ("member_expression", "member_access_expression",
+                              "navigation_expression", "qualified_expression"):
+                # obj.method() → extract method name
+                for sub in reversed(child.children):
+                    if sub.type in ("identifier", "simple_identifier",
+                                    "property_identifier", "name"):
+                        return _get_node_text(sub)
+        return None
+
+    if func.type in ("identifier", "simple_identifier"):
+        return _get_node_text(func)
+    # Nested: obj.method()
+    for child in reversed(func.children):
+        if child.type in ("identifier", "simple_identifier", "property_identifier", "name"):
+            return _get_node_text(child)
     return None
 
 
@@ -390,6 +466,13 @@ _CLASS_TYPES: dict[str, set[str]] = {
     "go": set(),
     "rust": {"impl_item"},
     "java": {"class_declaration", "interface_declaration"},
+    "kotlin": {"class_declaration", "object_declaration", "interface_declaration"},
+    "swift": {"class_declaration", "protocol_declaration", "struct_declaration"},
+    "php": {"class_declaration", "interface_declaration", "trait_declaration"},
+    "ruby": {"class"},
+    "c": set(),
+    "cpp": {"class_specifier", "struct_specifier"},
+    "scala": {"class_definition", "trait_definition", "object_definition"},
 }
 
 
@@ -412,7 +495,8 @@ def _walk_tree(
     if node.type in def_types:
         name = None
         for child in node.children:
-            if child.type in ("identifier", "name", "property_identifier", "type_identifier"):
+            if child.type in ("identifier", "name", "simple_identifier",
+                              "property_identifier", "type_identifier"):
                 name = _get_node_text(child)
                 break
         if name:
@@ -442,6 +526,39 @@ def _walk_tree(
         elif lang in ("javascript", "typescript", "tsx"):
             if node.type == "import_statement":
                 imports.extend(_extract_js_imports(node, file_path))
+        elif lang in ("c", "cpp"):
+            # #include <stdio.h> or #include "myheader.h"
+            for child in node.children:
+                if child.type in ("system_lib_string", "string_literal"):
+                    path_str = _get_node_text(child).strip('<>"')
+                    imports.append(Import(file_path=file_path, imported_name=path_str.split("/")[-1].split(".")[0], module_path=path_str))
+        elif lang == "ruby":
+            # require "lib" / require_relative "./file"
+            if node.type == "call":
+                func_text = ""
+                arg_text = ""
+                for child in node.children:
+                    if child.type in ("identifier", "name"):
+                        func_text = _get_node_text(child)
+                    elif child.type == "argument_list":
+                        for arg in child.children:
+                            if arg.type == "string":
+                                arg_text = _get_node_text(arg).strip("'\"")
+                if func_text in ("require", "require_relative") and arg_text:
+                    imports.append(Import(file_path=file_path, imported_name=arg_text.split("/")[-1], module_path=arg_text))
+        else:
+            # Generic: extract identifiers from import node (kotlin, swift, php, scala, java, go, rust, c#)
+            text = _get_node_text(node)
+            # Find the imported name — usually last identifier in the import path
+            parts = text.replace(";", "").replace("{", "").replace("}", "").split()
+            for part in reversed(parts):
+                cleaned = part.strip(".*,;")
+                if cleaned and cleaned not in ("import", "using", "use", "from", "package"):
+                    name = cleaned.split(".")[-1].split("::")[-1].split("/")[-1]
+                    if name and name[0].isalpha():
+                        module = cleaned
+                        imports.append(Import(file_path=file_path, imported_name=name, module_path=module))
+                        break
 
     # Check if this node defines class inheritance
     if node.type in class_types:
@@ -463,6 +580,17 @@ _EXT_TO_LANG: dict[str, str] = {
     ".go": "go",
     ".rs": "rust",
     ".java": "java",
+    ".kt": "kotlin",
+    ".kts": "kotlin",
+    ".swift": "swift",
+    ".php": "php",
+    ".rb": "ruby",
+    ".c": "c",
+    ".h": "c",
+    ".cpp": "cpp",
+    ".hpp": "cpp",
+    ".cc": "cpp",
+    ".scala": "scala",
 }
 
 

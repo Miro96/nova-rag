@@ -222,18 +222,19 @@ rm -rf ~/.nova-rag
 <summary><b>Claude Code</b> (recommended)</summary>
 
 ```bash
-# If you restarted your terminal after install:
-claude mcp add nova-rag -- nova-rag
-
-# If nova-rag is not found, use the full path:
-# macOS / Linux (pipx):
+# macOS / Linux (recommended — full path, always works):
 claude mcp add nova-rag -- ~/.local/bin/nova-rag
 
 # Windows:
 claude mcp add nova-rag -- %USERPROFILE%\.local\bin\nova-rag.exe
+
+# Or if nova-rag is in your PATH:
+claude mcp add nova-rag -- nova-rag
 ```
 
-Done. Start asking questions about your code.
+**You only run this once.** After that, nova-rag works in every project automatically — it detects which folder you're in and indexes it on first query. No per-project setup needed.
+
+Done. Open any project in Claude Code and start asking questions about the code.
 </details>
 
 <details>

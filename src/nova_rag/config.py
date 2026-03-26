@@ -103,6 +103,19 @@ class Config:
             # Data files
             ".sqlite", ".db", ".sqlite3",
             ".csv", ".parquet", ".arrow",
+            # Documentation / non-code (waste embeddings on non-code content)
+            ".md", ".mdx", ".rst", ".txt",
+            # Config files (not searchable code)
+            ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg",
+            ".xml", ".xsl", ".xslt",
+            # Web markup / styles (not semantic code)
+            ".html", ".htm", ".css", ".scss", ".less", ".sass",
+            # SQL dumps / scripts
+            ".sql",
+            # Env / secrets
+            ".env",
+            # Logs
+            ".log",
         }
     )
     excluded_filenames: set[str] = field(
@@ -120,6 +133,14 @@ class Config:
             # Auto-generated
             ".DS_Store",
             "Thumbs.db",
+            # Documentation
+            "README.md",
+            "CHANGELOG.md",
+            "CONTRIBUTING.md",
+            "CODE_OF_CONDUCT.md",
+            "SECURITY.md",
+            "LICENSE",
+            "LICENSE.md",
         }
     )
 

@@ -926,5 +926,22 @@ class Store:
         self._index = faiss.IndexIDMap(faiss.IndexFlatIP(self._embedding_dim))
         self._save_faiss()
 
+    def save_project_meta(self, project_data: dict) -> None:
+        """Save project metadata (name, type, language) alongside the index."""
+        meta_path = self._index_dir / "project.json"
+        import json
+        meta_path.write_text(json.dumps(project_data, indent=2))
+
+    def load_project_meta(self) -> dict | None:
+        """Load project metadata if it exists."""
+        meta_path = self._index_dir / "project.json"
+        if meta_path.exists():
+            import json
+            try:
+                return json.loads(meta_path.read_text())
+            except (json.JSONDecodeError, OSError):
+                return None
+        return None
+
     def close(self) -> None:
         self._conn.close()

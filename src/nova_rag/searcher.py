@@ -1,5 +1,5 @@
 """Semantic search over indexed codebases with hybrid BM25+vector ranking,
-code graph navigation, dead code detection, and smart query routing."""
+code graph navigation, dead code detection, smart query routing, and workspace support."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import numpy as np
 
 from nova_rag.config import Config
 from nova_rag.store import Store
+from nova_rag.workspace import Project, load_workspace, is_monorepo
 
 # Lazy-loaded model singleton (shared with indexer)
 _model = None
@@ -367,6 +368,88 @@ def smart_search(
         language=language,
     )
     return {"intent": "search", "results": results}
+
+
+# ── Workspace / Multi-project ──
+
+_BACKEND_PATTERNS = re.compile(
+    r"(backend|api|endpoint|controller|service|database|migration|server|middleware)",
+    re.IGNORECASE,
+)
+
+_FRONTEND_PATTERNS = re.compile(
+    r"(frontend|component|page|hook|ui|button|modal|layout|view|template|widget)",
+    re.IGNORECASE,
+)
+
+
+def _detect_project_type_from_query(query: str) -> str | None:
+    """Detect if query targets backend or frontend."""
+    if _BACKEND_PATTERNS.search(query):
+        return "backend"
+    if _FRONTEND_PATTERNS.search(query):
+        return "frontend"
+    return None
+
+
+def search_workspace(
+    query: str,
+    root_path: str | Path,
+    config: Config | None = None,
+    project: str | None = None,
+    top_k: int = 10,
+    path_filter: str | None = None,
+    language: str | None = None,
+) -> dict:
+    """Search across multiple projects in a workspace.
+
+    Args:
+        query: Search query.
+        root_path: Workspace root directory.
+        project: Filter by project name (substring match).
+        top_k: Max results total.
+        path_filter: Filter file paths.
+        language: Filter by language.
+    """
+    config = config or Config()
+    root_path = Path(root_path).resolve()
+    projects = load_workspace(root_path, config)
+
+    if not projects:
+        # Fallback to single-project search
+        return {"intent": "search", "results": search(query, root_path, config, top_k, path_filter, language)}
+
+    # Filter by explicit project name
+    if project:
+        projects = [p for p in projects if project.lower() in p.name.lower()]
+
+    # Smart-detect project type from query
+    if not project:
+        detected_type = _detect_project_type_from_query(query)
+        if detected_type:
+            typed_projects = [p for p in projects if p.type == detected_type]
+            if typed_projects:
+                projects = typed_projects
+
+    # Search each project
+    all_results = []
+    for p in projects:
+        try:
+            results = search(query, p.path, config, top_k=top_k, path_filter=path_filter, language=language)
+            for r in results:
+                r["project"] = p.name
+                r["project_type"] = p.type
+            all_results.extend(results)
+        except Exception:
+            pass  # Skip projects that fail
+
+    # Re-rank by score across all projects
+    all_results.sort(key=lambda r: r.get("score", 0), reverse=True)
+    return {
+        "intent": "search",
+        "projects_searched": [p.name for p in projects],
+        "results": all_results[:top_k],
+    }
 
 
 def get_status(

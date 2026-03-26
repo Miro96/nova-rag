@@ -18,10 +18,17 @@ from nova_rag.searcher import (
     graph_query,
     impact_query,
     search,
+    search_workspace,
     smart_search,
     source_query,
 )
 from nova_rag.watcher import ensure_watching
+from nova_rag.workspace import (
+    add_project,
+    is_monorepo,
+    load_workspace,
+    remove_project,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,10 +59,36 @@ def _preload_model() -> None:
 
 
 def _auto_index(project_path: str) -> str | None:
-    """Auto-index and start watcher if project is not indexed.
+    """Auto-index project(s). Detects monorepo and indexes sub-projects.
 
     Returns a short summary string, or None if already indexed.
     """
+    from pathlib import Path
+
+    root = Path(project_path).resolve()
+
+    # Check if this is a monorepo with sub-projects
+    if is_monorepo(root):
+        projects = load_workspace(root, _config)
+        if projects:
+            summaries = []
+            for p in projects:
+                status = get_status(p.path, _config)
+                if not status.get("indexed") or status.get("total_chunks", 0) == 0:
+                    last_msg = [""]
+
+                    def _progress(msg: str, _lm=last_msg) -> None:
+                        _lm[0] = msg
+                        logger.info(msg)
+
+                    index_project(p.path, config=_config, on_progress=_progress)
+                    ensure_watching(p.path, _config)
+                    summaries.append(f"{p.name}: {last_msg[0]}")
+            if summaries:
+                return " | ".join(summaries)
+            return None
+
+    # Single project
     status = get_status(project_path, _config)
     if not status.get("indexed") or status.get("total_chunks", 0) == 0:
         last_msg = ["Indexing..."]
@@ -77,6 +110,7 @@ def _auto_index(project_path: str) -> str | None:
 def code_search(
     query: str,
     path: str = "",
+    project: str | None = None,
     top_k: int = 10,
     path_filter: str | None = None,
     language: str | None = None,
@@ -91,11 +125,15 @@ def code_search(
     - "dead code in src/auth" → finds unused functions
     - "class hierarchy of UserService" → shows parents/children
 
-    The router auto-detects intent from your query. No need to pick the right tool.
+    In monorepos, automatically detects sub-projects and searches across them.
+    Use project="api-core" to search only a specific sub-project.
+    Queries with "backend"/"api" auto-filter to backend projects.
+    Queries with "frontend"/"component" auto-filter to frontend projects.
 
     Args:
         query: Natural language query — ask anything about the codebase.
         path: Project directory. Defaults to current working directory.
+        project: Filter by sub-project name (e.g. "api-core", "web-astrology").
         top_k: Max results for search queries (ignored for graph/deadcode).
         path_filter: Substring filter on file paths (e.g. "src/auth").
         language: Programming language filter (e.g. "python").
@@ -105,6 +143,24 @@ def code_search(
     """
     project_path = path or os.getcwd()
     indexing_log = _auto_index(project_path)
+
+    from pathlib import Path as _Path
+    root = _Path(project_path).resolve()
+
+    # Monorepo: search across sub-projects
+    if is_monorepo(root):
+        result = search_workspace(
+            query=query,
+            root_path=project_path,
+            config=_config,
+            project=project,
+            top_k=top_k,
+            path_filter=path_filter,
+            language=language,
+        )
+        if indexing_log:
+            result["_indexing"] = indexing_log
+        return result
 
     result = smart_search(
         query=query,
@@ -281,6 +337,82 @@ def rag_watch(path: str = "") -> dict:
     project_path = path or os.getcwd()
     newly_started = ensure_watching(project_path, _config)
     return {"watching": True, "path": project_path, "newly_started": newly_started}
+
+
+# ── Workspace / Multi-project tools ──
+
+
+@mcp.tool()
+def rag_projects(path: str = "") -> dict:
+    """List all detected sub-projects in the workspace.
+
+    In monorepos, shows each sub-project with its name, type (backend/frontend),
+    language, and whether it's indexed.
+
+    Args:
+        path: Workspace root directory. Defaults to cwd.
+    """
+    project_path = path or os.getcwd()
+    from pathlib import Path as _Path
+    root = _Path(project_path).resolve()
+
+    projects = load_workspace(root, _config)
+    result = []
+    for p in projects:
+        status = get_status(p.path, _config)
+        result.append({
+            "name": p.name,
+            "type": p.type,
+            "language": p.language,
+            "path": p.path,
+            "indexed": status.get("indexed", False),
+            "chunks": status.get("total_chunks", 0),
+        })
+    return {"projects": result, "count": len(result)}
+
+
+@mcp.tool()
+def rag_projects_add(project_path: str, name: str = "", path: str = "") -> dict:
+    """Explicitly add a project to the workspace and index it.
+
+    Args:
+        project_path: Path to the project directory to add.
+        name: Custom name for the project. Defaults to directory name.
+        path: Workspace root. Defaults to cwd.
+    """
+    workspace_root = path or os.getcwd()
+    from pathlib import Path as _Path
+    root = _Path(workspace_root).resolve()
+
+    project = add_project(root, project_path, _config, name=name)
+
+    # Index it
+    index_project(project.path, config=_config,
+                  on_progress=lambda msg: logger.info(msg))
+    ensure_watching(project.path, _config)
+
+    return {
+        "added": project.name,
+        "type": project.type,
+        "language": project.language,
+        "path": project.path,
+    }
+
+
+@mcp.tool()
+def rag_projects_remove(name: str, path: str = "") -> dict:
+    """Remove a project from the workspace.
+
+    Args:
+        name: Name of the project to remove.
+        path: Workspace root. Defaults to cwd.
+    """
+    workspace_root = path or os.getcwd()
+    from pathlib import Path as _Path
+    root = _Path(workspace_root).resolve()
+
+    removed = remove_project(root, name, _config)
+    return {"removed": removed, "name": name}
 
 
 def main() -> None:

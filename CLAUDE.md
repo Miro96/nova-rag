@@ -5,44 +5,30 @@
 ```markdown
 ## Code Search (nova-rag)
 
-This project has a local code intelligence index. Use `code_search` — it auto-detects what you need:
+Prefer `code_search` over Grep for questions about the codebase:
+- "where is payment processing?" → finds functions with full context
+- "who calls handleAuth?" → shows all call sites
+- "dead code in src/" → finds unused functions
+- "impact of changing validate?" → blast radius analysis
+- "what changed this week?" → git changes mapped to code graph
 
-- "where is payment processing?" → semantic search with graph context
-- "who calls handleAuth?" → call graph: all callers
-- "what does processData call?" → call graph: all callees
-- "who imports psycopg2?" → import graph
-- "dead code in src/auth" → unused function detection
-- "class hierarchy of UserService" → inheritance tree
-- "impact of changing validate" → blast radius analysis
-- "what changed this week?" → git change intelligence
-
-Search results include `callers`/`callees` — use them for full context.
+For monorepos: use project= to filter ("api-core", "web-app").
 For exact string matches (TODOs, error messages), use Grep.
 ```
 
-## For nova-rag developers
+## For developers
 
-### Build and test
 ```bash
-pip install -e ".[dev]"
-pytest tests/ -v   # 99 tests
+pip install -e ".[dev]" && pytest tests/ -v  # 129 tests
 ```
 
 ### Architecture
-- `server.py` — MCP entry point, 11 tools (code_search = smart router)
-- `searcher.py` — smart router + hybrid search + graph queries + deadcode + impact
-- `indexer.py` — multithreaded: ThreadPoolExecutor for chunking/graph, sequential embedding
-- `chunker.py` — tree-sitter AST parsing (7 languages) + sliding window fallback
-- `graph.py` — symbols, calls, imports, inheritance extraction from tree-sitter AST
-- `git_intel.py` — git change intelligence mapped to code graph
-- `store.py` — FAISS vectors + SQLite (FTS5 + graph tables + inheritance)
-- `watcher.py` — watchdog file watcher for auto-reindex
-- `config.py` — env var configuration
-
-### Key decisions
-- Smart router detects intent from query via regex patterns
-- Hybrid search via RRF (Reciprocal Rank Fusion) from FAISS + FTS5
-- Code graph stored in SQLite (symbols, calls, imports, inheritance tables)
-- Impact analysis: recursive transitive caller graph traversal
-- Multithreading: file processing in parallel, embedding/store sequential
-- Embedding model pre-loaded in background thread at startup
+- `server.py` — 14 MCP tools (code_search = smart router)
+- `searcher.py` — smart router + hybrid search + graph + workspace search
+- `workspace.py` — monorepo detection + project management
+- `indexer.py` — multithreaded indexing (ThreadPoolExecutor)
+- `chunker.py` — tree-sitter parsing (14 languages)
+- `graph.py` — symbols, calls, imports, inheritance extraction
+- `git_intel.py` — git change intelligence
+- `store.py` — FAISS + SQLite (FTS5 + graph + inheritance)
+- `watcher.py` — file watcher, `config.py` — env var config

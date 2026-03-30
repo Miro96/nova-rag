@@ -43,6 +43,12 @@ mcp = FastMCP(
 
 _config = Config()
 
+# ── Background indexing state ──
+
+_indexing_lock = threading.Lock()
+_indexing_in_progress: dict[str, str] = {}  # path → latest progress message
+_indexing_done: dict[str, str] = {}  # path → final message (cleared after first read)
+
 
 def _preload_model() -> None:
     """Pre-load the embedding model in a background thread at startup."""
@@ -58,49 +64,87 @@ def _preload_model() -> None:
         logger.exception("Failed to pre-load embedding model")
 
 
-def _auto_index(project_path: str) -> str | None:
-    """Auto-index project(s). Detects monorepo and indexes sub-projects.
+def _bg_index_one(project_path: str, label: str | None = None) -> None:
+    """Index a single project in background, updating progress state."""
+    key = str(__import__("pathlib").Path(project_path).resolve())
+    tag = f"{label}: " if label else ""
 
-    Returns a short summary string, or None if already indexed.
+    def _progress(msg: str) -> None:
+        with _indexing_lock:
+            _indexing_in_progress[key] = f"{tag}{msg}"
+        logger.info("%s%s", tag, msg)
+
+    try:
+        index_project(project_path, config=_config, on_progress=_progress)
+        ensure_watching(project_path, _config)
+    except Exception:
+        logger.exception("Background indexing failed for %s", project_path)
+    finally:
+        with _indexing_lock:
+            final = _indexing_in_progress.pop(key, f"{tag}done")
+            _indexing_done[key] = final
+
+
+def _auto_index(project_path: str) -> str | None:
+    """Auto-index project(s) in background. Returns immediately.
+
+    - First call for an unindexed project: starts background indexing,
+      returns a progress message so the LLM knows to retry.
+    - While indexing: returns current progress message.
+    - After indexing finishes: returns final summary once, then None.
+    - Already indexed: returns None (no-op).
     """
     from pathlib import Path
 
     root = Path(project_path).resolve()
 
-    # Check if this is a monorepo with sub-projects
+    paths_to_index: list[tuple[str, str | None]] = []  # (path, label)
+
     if is_monorepo(root):
         projects = load_workspace(root, _config)
-        if projects:
-            summaries = []
-            for p in projects:
-                status = get_status(p.path, _config)
-                if not status.get("indexed") or status.get("total_chunks", 0) == 0:
-                    last_msg = [""]
+        for p in projects:
+            status = get_status(p.path, _config)
+            if not status.get("indexed") or status.get("total_chunks", 0) == 0:
+                paths_to_index.append((p.path, p.name))
+    else:
+        status = get_status(project_path, _config)
+        if not status.get("indexed") or status.get("total_chunks", 0) == 0:
+            paths_to_index.append((str(root), None))
 
-                    def _progress(msg: str, _lm=last_msg) -> None:
-                        _lm[0] = msg
-                        logger.info(msg)
+    if not paths_to_index:
+        # Check if there are finished messages to deliver
+        with _indexing_lock:
+            msgs = []
+            for key in list(_indexing_done):
+                msgs.append(_indexing_done.pop(key))
+            return " | ".join(msgs) if msgs else None
 
-                    index_project(p.path, config=_config, on_progress=_progress)
-                    ensure_watching(p.path, _config)
-                    summaries.append(f"{p.name}: {last_msg[0]}")
-            if summaries:
-                return " | ".join(summaries)
-            return None
+    messages = []
+    for p, label in paths_to_index:
+        key = str(Path(p).resolve())
+        with _indexing_lock:
+            # Already finished?
+            if key in _indexing_done:
+                messages.append(_indexing_done.pop(key))
+                continue
 
-    # Single project
-    status = get_status(project_path, _config)
-    if not status.get("indexed") or status.get("total_chunks", 0) == 0:
-        last_msg = ["Indexing..."]
+            # Already in progress?
+            if key in _indexing_in_progress:
+                messages.append(_indexing_in_progress[key])
+                continue
 
-        def _progress(msg: str) -> None:
-            last_msg[0] = msg
-            logger.info(msg)
+            # Start background indexing
+            _indexing_in_progress[key] = f"{label + ': ' if label else ''}starting..."
 
-        index_project(project_path, config=_config, on_progress=_progress)
-        ensure_watching(project_path, _config)
-        return last_msg[0]  # Only return final "[Done] ..." message
-    return None
+        threading.Thread(
+            target=_bg_index_one,
+            args=(p, label),
+            daemon=True,
+        ).start()
+        tag = f"{label}: " if label else ""
+        messages.append(f"{tag}⏳ Indexing started in background — results may be incomplete until done.")
+
+    return " | ".join(messages) if messages else None
 
 
 # ── Smart router (primary tool) ──

@@ -875,6 +875,60 @@ class Store:
             "inheritances": inherit_count,
         }
 
+    # ── Docs generation queries ──
+
+    def get_all_symbols(self) -> list[dict]:
+        """Get all symbols with their file paths, kinds, and chunk content."""
+        rows = self._conn.execute(
+            """SELECT s.name, s.kind, s.file_path, s.line, s.chunk_id,
+                      ch.content, ch.start_line, ch.end_line
+               FROM symbols s
+               LEFT JOIN chunks ch ON ch.id = s.chunk_id
+               ORDER BY s.file_path, s.line"""
+        ).fetchall()
+        return [
+            {
+                "name": r[0], "kind": r[1], "file_path": r[2], "line": r[3],
+                "chunk_id": r[4], "content": r[5] or "", "start_line": r[6], "end_line": r[7],
+            }
+            for r in rows
+        ]
+
+    def get_file_symbols(self) -> dict[str, list[dict]]:
+        """Get symbols grouped by file path."""
+        all_syms = self.get_all_symbols()
+        grouped: dict[str, list[dict]] = {}
+        for sym in all_syms:
+            grouped.setdefault(sym["file_path"], []).append(sym)
+        return grouped
+
+    def get_module_source(self, file_paths: list[str]) -> str:
+        """Get concatenated source code for a list of files from chunks."""
+        if not file_paths:
+            return ""
+        placeholders = ",".join("?" for _ in file_paths)
+        rows = self._conn.execute(
+            f"""SELECT file_path, content, start_line
+                FROM chunks
+                WHERE file_path IN ({placeholders})
+                ORDER BY file_path, start_line""",
+            file_paths,
+        ).fetchall()
+        parts: list[str] = []
+        current_file = None
+        for fpath, content, _start in rows:
+            if fpath != current_file:
+                current_file = fpath
+                parts.append(f"\n# ── File: {fpath} ──\n")
+            if content:
+                parts.append(content)
+        return "\n".join(parts)
+
+    def get_file_hashes(self) -> dict[str, str]:
+        """Get file path → hash mapping for incremental doc updates."""
+        rows = self._conn.execute("SELECT path, hash FROM files").fetchall()
+        return {r[0]: r[1] for r in rows}
+
     # ── Stats & management ──
 
     def get_stats(self) -> dict:

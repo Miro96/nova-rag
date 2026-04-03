@@ -503,7 +503,7 @@ def _bg_generate_docs(project_path: str, output_dir: str, concurrency: int,
 
 
 @mcp.tool()
-async def rag_docs(
+def rag_docs(
     path: str = "",
     output_dir: str = "",
     concurrency: int = 0,
@@ -547,7 +547,7 @@ async def rag_docs(
             return {"status": "completed", **result}
 
     # Ensure indexed first
-    await _auto_index(project_path)
+    _auto_index(project_path)
 
     # Start background generation
     with _docs_lock:

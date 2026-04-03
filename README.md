@@ -72,6 +72,20 @@ claude mcp add nova-rag -- ~/.local/bin/nova-rag
 
 **Update:** `pipx upgrade nova-rag` | **Uninstall:** `pipx uninstall nova-rag` and `rm -rf ~/.nova-rag`
 
+> **⚠️ pipx upgrade bug (macOS):** Some versions of pipx (e.g. 1.11.0) fail to upgrade
+> packages with hyphens in the name and show:
+> `Error: 'nova-rag' looks like a path. Expected the name of an installed package.`
+> If this happens, use force reinstall instead — it's equivalent to upgrade:
+> ```
+> pipx install git+https://github.com/Miro96/nova-rag.git --force
+> ```
+
+> **⚠️ If `pipx uninstall` also fails** with the same path error, remove manually:
+> ```
+> rm -rf ~/.local/pipx/venvs/nova-rag
+> rm ~/.local/bin/nova-rag
+> ```
+
 ---
 
 ## Usage — Just Ask

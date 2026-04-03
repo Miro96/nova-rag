@@ -49,11 +49,16 @@ def cluster_modules(
         return {}
 
     # Normalise paths: strip project_path prefix so we work with relative paths
-    project_root = project_path.rstrip("/") + "/"
+    # Resolve symlinks (e.g. /tmp → /private/tmp on macOS)
+    from pathlib import Path as _Path
+    resolved_root = str(_Path(project_path).resolve()).rstrip("/") + "/"
+    raw_root = project_path.rstrip("/") + "/"
 
     def _rel(p: str) -> str:
-        if p.startswith(project_root):
-            return p[len(project_root):]
+        if p.startswith(resolved_root):
+            return p[len(resolved_root):]
+        if p.startswith(raw_root):
+            return p[len(raw_root):]
         return p
 
     # ── Step 1: group symbols by directory ──

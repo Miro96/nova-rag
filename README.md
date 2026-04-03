@@ -186,6 +186,47 @@ First index: 30-120s. Subsequent: incremental (only changed files). File watcher
 
 ---
 
+## Documentation Generation
+
+Generate comprehensive, structured documentation for any codebase — with Mermaid diagrams, cross-references, and module overviews.
+
+```
+> "generate docs for this project"   → rag_docs() creates full documentation
+> "check docs status"                → rag_docs_status() shows progress/results
+```
+
+**How it works:**
+1. Clusters code into logical modules using the indexed code graph (no LLM needed — instant)
+2. Generates documentation for each module **in parallel** via Claude CLI
+3. Builds parent overviews and a repository overview
+4. Saves to `{project}/docs/generated/` (configurable)
+
+**Incremental updates:** On subsequent runs, only modules with changed source files are regenerated. Use `force=True` to regenerate everything.
+
+**Multi-language:** Default is English. Pass `language="uk"` for Ukrainian, `language="de"` for German, etc.
+
+| Parameter | Default | Description |
+|---|---|---|
+| `output_dir` | `{project}/docs/generated/` | Where to save docs |
+| `concurrency` | `4` | Parallel Claude CLI processes |
+| `model` | `sonnet` | Claude model (sonnet/opus/haiku) |
+| `language` | `en` | Output language (en/uk/ru/de/fr/es/...) |
+| `force` | `false` | Regenerate all, ignoring cache |
+
+**Output structure:**
+```
+docs/generated/
+├── overview.md          # Repository overview with architecture diagram
+├── modules/
+│   ├── auth.md          # Module docs with Mermaid diagrams
+│   ├── api-routes.md
+│   └── ...
+├── module_tree.json     # Module hierarchy (cached)
+└── metadata.json        # Generation metadata + file hashes
+```
+
+---
+
 ## All Tools
 
 | Tool | Description |
@@ -200,6 +241,8 @@ First index: 30-120s. Subsequent: incremental (only changed files). File watcher
 | `rag_index` | Index/reindex a project |
 | `rag_status` | Check index status |
 | `rag_watch` | Start file watcher |
+| **`rag_docs`** | **Generate documentation for the codebase** |
+| **`rag_docs_status`** | **Check documentation generation status** |
 | `rag_projects` | List sub-projects in workspace |
 | `rag_projects_add` | Add a project to workspace |
 | `rag_projects_remove` | Remove a project from workspace |
@@ -220,6 +263,10 @@ First index: 30-120s. Subsequent: incremental (only changed files). File watcher
 **rag_source** — `chunk_id` (int), `path` (str)
 
 **rag_projects_add** — `project_path` (str), `name` (str), `path` (str)
+
+**rag_docs** — `path` (str), `output_dir` (str), `concurrency` (int=4), `model` (str="sonnet"), `language` (str="en"), `force` (bool=false)
+
+**rag_docs_status** — `path` (str)
 
 **rag_projects_remove** — `name` (str), `path` (str)
 </details>
@@ -248,6 +295,9 @@ First index: 30-120s. Subsequent: incremental (only changed files). File watcher
 | `NOVA_RAG_CHUNK_SIZE` | `60` | Max lines per chunk |
 | `NOVA_RAG_BATCH_SIZE` | `64` | Embedding batch size |
 | `NOVA_RAG_DATA_DIR` | `~/.nova-rag` | Index storage |
+| `NOVA_RAG_DOCS_CONCURRENCY` | `4` | Parallel Claude CLI processes for docs |
+| `NOVA_RAG_DOCS_MODEL` | `sonnet` | Default Claude model for docs |
+| `NOVA_RAG_DOCS_OUTPUT` | `{project}/docs/generated` | Default docs output directory |
 
 ---
 
@@ -295,16 +345,19 @@ pytest tests/ -v   # 129 tests
 
 ```
 src/nova_rag/
-├── server.py      MCP server, 14 tools
-├── searcher.py    Smart router, hybrid search, graph queries, workspace search
-├── workspace.py   Monorepo detection, project management
-├── indexer.py     Multithreaded file processing + embedding
-├── chunker.py     Tree-sitter AST parsing (14 languages)
-├── graph.py       Code graph: symbols, calls, imports, inheritance
-├── git_intel.py   Git change intelligence
-├── store.py       FAISS + SQLite (FTS5 + graph tables)
-├── watcher.py     File watcher for auto re-indexing
-└── config.py      Environment-based configuration
+├── server.py          MCP server, 16 tools
+├── searcher.py        Smart router, hybrid search, graph queries, workspace search
+├── workspace.py       Monorepo detection, project management
+├── indexer.py         Multithreaded file processing + embedding
+├── chunker.py         Tree-sitter AST parsing (14 languages)
+├── graph.py           Code graph: symbols, calls, imports, inheritance
+├── git_intel.py       Git change intelligence
+├── store.py           FAISS + SQLite (FTS5 + graph tables)
+├── watcher.py         File watcher for auto re-indexing
+├── docs_generator.py  Parallel documentation generation via Claude CLI
+├── docs_cluster.py    Algorithmic module clustering (graph-based)
+├── docs_prompts.py    Prompt templates for documentation
+└── config.py          Environment-based configuration
 ```
 </details>
 

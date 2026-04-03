@@ -144,6 +144,26 @@ class Config:
         }
     )
 
+    # Documentation generation settings
+    docs_concurrency: int = field(
+        default_factory=lambda: int(os.getenv("NOVA_RAG_DOCS_CONCURRENCY", "4"))
+    )
+    docs_model: str = field(
+        default_factory=lambda: os.getenv("NOVA_RAG_DOCS_MODEL", "sonnet")
+    )
+    docs_output_dir: str = field(
+        default_factory=lambda: os.getenv("NOVA_RAG_DOCS_OUTPUT", "")
+    )
+
+    def get_docs_output(self, project_path: str | Path) -> str:
+        """Return the docs output directory for a project.
+
+        Uses ``docs_output_dir`` if set, otherwise ``{project}/docs/generated``.
+        """
+        if self.docs_output_dir:
+            return str(Path(self.docs_output_dir).resolve())
+        return str(Path(project_path).resolve() / "docs" / "generated")
+
     def index_dir_for(self, project_path: str | Path) -> Path:
         """Return the storage directory for a given project path."""
         abs_path = str(Path(project_path).resolve())

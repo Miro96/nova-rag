@@ -51,11 +51,20 @@ _indexing_done: dict[str, str] = {}  # path → final message (cleared after fir
 
 
 def _preload_model() -> None:
-    """Pre-load the embedding model in a background thread at startup."""
+    """Pre-load the embedding model synchronously before mcp.run().
+
+    Done in the main thread on purpose: loading SentenceTransformer
+    inside a daemon thread while mcp.run() is spinning up the asyncio
+    event loop on the main thread reliably deadlocks on Windows — the
+    PyTorch/MKL init and the anyio thread limiter fight each other and
+    the loader never returns. Blocking ~8s on startup adds latency to
+    the MCP handshake but is well under the client's initialize
+    timeout, and the first real tool call then lands on a warm model.
+    """
     try:
         from nova_rag.indexer import _get_model
 
-        logger.info("Pre-loading embedding model in background...")
+        logger.info("Pre-loading embedding model...")
         _get_model(
             _config.model_name,
             on_progress=lambda msg: logger.info(msg),
@@ -471,7 +480,7 @@ def main() -> None:
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
         stream=sys.stderr,
     )
-    threading.Thread(target=_preload_model, daemon=True).start()
+    _preload_model()
     mcp.run()
 
 

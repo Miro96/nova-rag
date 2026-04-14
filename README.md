@@ -29,6 +29,12 @@ nova-rag: processStripeWebhook() in payments/webhook.py:34
 
 ## Installation
 
+> **⏱️ First install downloads ~500MB** (torch, faiss, sentence-transformers).
+> Expect **2–5 minutes** on a good connection, longer on slow networks.
+> All commands below pass `-v` / `--verbose` so pip shows live progress
+> — if the terminal looks quiet for more than ~30 s during `Collecting torch`,
+> it's just a big download, not a hang.
+
 <details>
 <summary><b>macOS</b></summary>
 
@@ -37,7 +43,7 @@ nova-rag: processStripeWebhook() in payments/webhook.py:34
 brew install python@3.12 pipx
 pipx ensurepath
 
-# 2. Restart terminal, then install nova-rag
+# 2. Restart terminal, then install nova-rag (live logs)
 pipx install nova-rag --verbose
 
 # 3. Connect to Claude Code (one time, works for all projects)
@@ -51,9 +57,11 @@ claude mcp add nova-rag -- ~/.local/bin/nova-rag
 1. Install Python from [python.org](https://www.python.org/downloads/) — check **"Add to PATH"**
 2. Open PowerShell:
 ```cmd
-pip install nova-rag
+pip install -v nova-rag
 claude mcp add nova-rag -- nova-rag
 ```
+The `-v` flag makes pip print every download and build step so you can
+watch progress in real time.
 </details>
 
 <details>
@@ -62,22 +70,23 @@ claude mcp add nova-rag -- nova-rag
 ```bash
 # Ubuntu/Debian
 sudo apt install python3 python3-pip
-pip3 install nova-rag
+pip3 install -v nova-rag
 # If "externally-managed-environment" error:
-pipx install nova-rag && pipx ensurepath
+pipx install nova-rag --verbose && pipx ensurepath
 
 claude mcp add nova-rag -- ~/.local/bin/nova-rag
 ```
 </details>
 
-**Update:** `pipx upgrade nova-rag` | **Uninstall:** `pipx uninstall nova-rag` and `rm -rf ~/.nova-rag`
+**Update:** `pipx upgrade nova-rag --verbose` (or `pip install -v --upgrade nova-rag`)
+**Uninstall:** `pipx uninstall nova-rag` and `rm -rf ~/.nova-rag`
 
 > **⚠️ pipx upgrade bug (macOS):** Some versions of pipx (e.g. 1.11.0) fail to upgrade
 > packages with hyphens in the name and show:
 > `Error: 'nova-rag' looks like a path. Expected the name of an installed package.`
 > If this happens, use force reinstall instead — it's equivalent to upgrade:
 > ```
-> pipx install git+https://github.com/Miro96/nova-rag.git --force
+> pipx install git+https://github.com/Miro96/nova-rag.git --force --verbose
 > ```
 
 > **⚠️ If `pipx uninstall` also fails** with the same path error, remove manually:

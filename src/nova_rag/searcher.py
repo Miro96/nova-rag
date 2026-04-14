@@ -373,17 +373,28 @@ _BACKEND_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
+# Only unambiguously UI-flavored tokens. Avoid generic words like
+# "page" (matches Facebook Page, page_id, pagination), "hook"
+# (matches webhooks, git hooks, hooks subproject), "view" (DB views,
+# MVC views), "template" (template engines, email templates).
 _FRONTEND_PATTERNS = re.compile(
-    r"(frontend|component|page|hook|ui|button|modal|layout|view|template|widget)",
+    r"(frontend|component|\.tsx|\.jsx|\bui\b|button|modal|dialog|layout|widget|stylesheet|css|tailwind)",
     re.IGNORECASE,
 )
 
 
 def _detect_project_type_from_query(query: str) -> str | None:
-    """Detect if query targets backend or frontend."""
-    if _BACKEND_PATTERNS.search(query):
+    """Detect if query targets backend or frontend.
+
+    Returns None when the query matches both (ambiguous) or neither —
+    in both cases the caller should search all projects rather than
+    guess wrong and hide relevant matches.
+    """
+    backend = bool(_BACKEND_PATTERNS.search(query))
+    frontend = bool(_FRONTEND_PATTERNS.search(query))
+    if backend and not frontend:
         return "backend"
-    if _FRONTEND_PATTERNS.search(query):
+    if frontend and not backend:
         return "frontend"
     return None
 

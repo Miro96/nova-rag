@@ -201,3 +201,49 @@ class TestWorkspaceSearch:
         for r in result.get("results", []):
             assert "project" in r
             assert "project_type" in r
+
+
+class TestProjectTypeRouting:
+    """Guard the query-router heuristic against over-eager filtering."""
+
+    def test_backend_keywords_detect_backend(self):
+        from nova_rag.searcher import _detect_project_type_from_query
+
+        assert _detect_project_type_from_query("fix auth middleware") == "backend"
+        assert _detect_project_type_from_query("database migration for users") == "backend"
+        assert _detect_project_type_from_query("/api/users endpoint 500") == "backend"
+
+    def test_frontend_keywords_detect_frontend(self):
+        from nova_rag.searcher import _detect_project_type_from_query
+
+        assert _detect_project_type_from_query("broken submit button") == "frontend"
+        assert _detect_project_type_from_query("login modal layout") == "frontend"
+        assert _detect_project_type_from_query("refactor UserCard component") == "frontend"
+
+    def test_ambiguous_domain_terms_dont_force_frontend(self):
+        """'page', 'hook', 'view' are domain terms — not UI markers.
+
+        Facebook Page, webhook, DB view, etc. must not silently hide
+        backend subprojects from workspace search.
+        """
+        from nova_rag.searcher import _detect_project_type_from_query
+
+        assert _detect_project_type_from_query(
+            "facebook page selection creating ad campaign object_story_spec page_id"
+        ) is None
+        assert _detect_project_type_from_query("stripe webhook handler") is None
+        assert _detect_project_type_from_query("materialized view refresh") is None
+
+    def test_mixed_signals_return_none(self):
+        """If a query matches both backend and frontend markers, don't guess."""
+        from nova_rag.searcher import _detect_project_type_from_query
+
+        assert (
+            _detect_project_type_from_query("api endpoint powering the settings modal")
+            is None
+        )
+
+    def test_unrelated_query_returns_none(self):
+        from nova_rag.searcher import _detect_project_type_from_query
+
+        assert _detect_project_type_from_query("login") is None

@@ -95,9 +95,19 @@ def _bg_index_one(project_path: str, label: str | None = None) -> None:
             _indexing_done[key] = final
 
 
+#: Soft cap on how long a single ``code_search`` will block waiting
+#: for auto-indexing to finish while streaming progress. After this
+#: many seconds, indexing is left running in a background thread and
+#: the tool call returns with an "indexing in progress" status so the
+#: client can retry for a complete result set. Overridable via the
+#: ``NOVA_RAG_AUTOINDEX_MAX_WAIT`` env var for tests / power users.
+_DEFAULT_AUTOINDEX_MAX_WAIT = float(os.environ.get("NOVA_RAG_AUTOINDEX_MAX_WAIT", "60"))
+
+
 def _auto_index(
     project_path: str,
     on_progress: Callable[[str], None] | None = None,
+    max_wait_seconds: float | None = None,
 ) -> str | None:
     """Auto-index project(s). Returns a status message or None.
 
@@ -107,12 +117,17 @@ def _auto_index(
       indexing in a background thread and return immediately with a
       message so the caller knows results may be incomplete.
     - ``on_progress`` is a callable (MCP tool with Context): run the
-      index synchronously in this thread and push progress lines to
-      the callback. On MCP this surfaces as notifications so the user
-      sees live progress instead of an opaque "thinking...".
+      index in a worker thread and stream every progress line through
+      the callback, but cap the total wait at ``max_wait_seconds``.
+      If indexing doesn't finish in time, detach to a daemon thread
+      (it keeps running and populates ``_indexing_done``) and return
+      with a "still indexing" status — the next call will either see
+      the done message or pick up progress from where it left off.
 
     Either mode never re-indexes a project that is already up to date.
     """
+    if max_wait_seconds is None:
+        max_wait_seconds = _DEFAULT_AUTOINDEX_MAX_WAIT
     from pathlib import Path
 
     root = Path(project_path).resolve()
@@ -174,27 +189,63 @@ def _auto_index(
             )
             continue
 
-        # Streaming mode: run the index in the calling thread and push
-        # every progress line to the callback so MCP clients see a live
-        # spinner instead of silence.
-        try:
-            on_progress(f"{tag}starting…")
+        # Streaming mode: run the index in a worker thread and stream
+        # progress lines to the callback. Cap the wait at
+        # max_wait_seconds to avoid holding a tool call open forever
+        # on very large projects.
+        on_progress(f"{tag}starting…")
 
-            def _stream(msg: str) -> None:
-                line = f"{tag}{msg}"
+        done_event = threading.Event()
+        result: dict = {"error": None}
+
+        def _worker(p=p, key=key, tag=tag, on_progress=on_progress) -> None:
+            try:
+                def _stream(msg: str) -> None:
+                    line = f"{tag}{msg}"
+                    with _indexing_lock:
+                        _indexing_in_progress[key] = line
+                    try:
+                        on_progress(line)
+                    except Exception:  # noqa: BLE001
+                        logger.debug("progress emit failed", exc_info=True)
+
+                index_project(p, config=_config, on_progress=_stream)
+                ensure_watching(p, _config)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Streaming indexing failed for %s", p)
+                result["error"] = str(exc)
+            finally:
                 with _indexing_lock:
-                    _indexing_in_progress[key] = line
-                on_progress(line)
+                    final = _indexing_in_progress.pop(key, f"{tag}done")
+                    # Record final state so the next _auto_index call
+                    # can drain it as a done-message.
+                    _indexing_done[key] = (
+                        f"{tag}failed: {result['error']}" if result["error"] else final
+                    )
+                done_event.set()
 
-            index_project(p, config=_config, on_progress=_stream)
-            ensure_watching(p, _config)
-            messages.append(f"{tag}done")
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("Synchronous indexing failed for %s", p)
-            messages.append(f"{tag}failed: {exc}")
-        finally:
-            with _indexing_lock:
-                _indexing_in_progress.pop(key, None)
+        worker = threading.Thread(target=_worker, daemon=True)
+        worker.start()
+
+        if done_event.wait(timeout=max_wait_seconds):
+            # Finished inside the budget.
+            if result["error"]:
+                messages.append(f"{tag}failed: {result['error']}")
+            else:
+                messages.append(f"{tag}done")
+                # Already recorded in _indexing_done; drain it so the
+                # caller doesn't see a duplicate message next call.
+                with _indexing_lock:
+                    _indexing_done.pop(key, None)
+        else:
+            # Timeout: detach, let indexing finish in background.
+            on_progress(
+                f"{tag}⏳ still indexing after {max_wait_seconds:.0f}s — continuing in "
+                f"background. Retry the query for complete results."
+            )
+            messages.append(
+                f"{tag}⏳ indexing continues in background (>{max_wait_seconds:.0f}s)"
+            )
 
     return " | ".join(messages) if messages else None
 

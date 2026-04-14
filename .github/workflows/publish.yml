@@ -30,6 +30,17 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
 
+    # Trusted Publishing via OIDC — no long-lived PyPI API token in
+    # repository secrets. Configure the trusted publisher in the PyPI
+    # project settings (one-time): owner=Miro96, repo=nova-rag,
+    # workflow=publish.yml, environment=pypi.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/nova-rag
+    permissions:
+      id-token: write  # required for OIDC token minting
+      contents: read
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -46,12 +57,10 @@ jobs:
       - name: Build package
         run: python -m build
 
-      - name: Verify version matches tag
+      - name: Verify wheel version matches tag
         run: |
           set -euo pipefail
           TAG_VERSION="${GITHUB_REF#refs/tags/v}"
-          PKG_VERSION=$(python -c "import re, pathlib; m=re.search(r'Version: (.+)', pathlib.Path('dist').glob('*.tar.gz').__next__().__str__()); print('n/a')" 2>/dev/null || true)
-          # Read version from the freshly built wheel filename.
           WHEEL=$(ls dist/nova_rag-*.whl | head -n1)
           WHEEL_VERSION=$(python -c "import re, sys; print(re.search(r'nova_rag-([^-]+)-', sys.argv[1]).group(1))" "$WHEEL")
           echo "Tag version:   $TAG_VERSION"
@@ -61,7 +70,7 @@ jobs:
             exit 1
           fi
 
-      - name: Publish to PyPI
+      - name: Publish to PyPI via OIDC
         uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          password: ${{ secrets.PYPI_TOKEN }}
+        # No password: Trusted Publishing mints a short-lived token
+        # from the GitHub OIDC identity of this workflow run.

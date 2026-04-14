@@ -112,11 +112,16 @@ def _auto_index(project_path: str) -> str | None:
             paths_to_index.append((str(root), None))
 
     if not paths_to_index:
-        # Check if there are finished messages to deliver
+        # Deliver finished messages, but ONLY for projects under the
+        # current query root — otherwise a leftover entry from a prior
+        # unrelated project leaks into this call's response.
+        root_str = str(root)
+        prefix = root_str + os.sep
         with _indexing_lock:
             msgs = []
             for key in list(_indexing_done):
-                msgs.append(_indexing_done.pop(key))
+                if key == root_str or key.startswith(prefix):
+                    msgs.append(_indexing_done.pop(key))
             return " | ".join(msgs) if msgs else None
 
     messages = []

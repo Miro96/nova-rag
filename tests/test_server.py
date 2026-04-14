@@ -49,21 +49,21 @@ class TestServerTools:
             assert result["files_indexed"] >= 2
             assert result["chunks_created"] > 0
 
-            results = rag_search(query="error handling", path=str(sample_project))
-            assert len(results) > 0
+            response = rag_search(query="error handling", path=str(sample_project))
+            assert isinstance(response, dict)
+            assert len(response["results"]) > 0
 
             status = rag_status(path=str(sample_project))
             assert status["indexed"] is True
 
     def test_rag_search_auto_indexes(self, sample_project, config):
         with patch("nova_rag.server._config", config):
-            results = rag_search(query="greeting", path=str(sample_project))
-            # When auto-indexing triggers, returns dict with _indexing + results
-            # When already indexed, returns list directly
-            assert isinstance(results, (list, dict))
-            if isinstance(results, dict):
-                assert "_indexing" in results
-                assert "results" in results
+            response = rag_search(query="greeting", path=str(sample_project))
+            # Always a dict — callers don't need a type-check branch.
+            assert isinstance(response, dict)
+            assert "results" in response
+            # _indexing is optional; present only when background indexing
+            # either started or delivered a done-message on this call.
 
     def test_rag_index_force(self, sample_project, config):
         with patch("nova_rag.server._config", config):
@@ -74,8 +74,8 @@ class TestServerTools:
     def test_rag_search_with_language_filter(self, sample_project, config):
         with patch("nova_rag.server._config", config):
             rag_index(path=str(sample_project))
-            results = rag_search(query="function", path=str(sample_project), language="python")
-            assert all(r["language"] == "python" for r in results)
+            response = rag_search(query="function", path=str(sample_project), language="python")
+            assert all(r["language"] == "python" for r in response["results"])
 
     def test_rag_graph_hierarchy(self, sample_project, config):
         with patch("nova_rag.server._config", config):
@@ -108,7 +108,8 @@ class TestServerTools:
         with patch("nova_rag.server._config", config):
             rag_index(path=str(sample_project))
             # Get a chunk ID from search
-            results = rag_search(query="error", path=str(sample_project))
+            response = rag_search(query="error", path=str(sample_project))
+            results = response["results"]
             if results:
                 chunk_id = results[0]["id"]
                 source = rag_source(chunk_id=chunk_id, path=str(sample_project))

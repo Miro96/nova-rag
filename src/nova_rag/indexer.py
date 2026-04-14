@@ -31,6 +31,48 @@ _model = None
 _model_lock = threading.Lock()
 
 
+def _embedding_dim(model) -> int:
+    """Return embedding dim across sentence-transformers 3.x-5.x.
+
+    5.x renamed ``get_sentence_embedding_dimension`` → ``get_embedding_dimension``
+    and emits a FutureWarning on the old name. We support both.
+    """
+    fn = getattr(model, "get_embedding_dimension", None) or model.get_sentence_embedding_dimension
+    return fn()
+
+
+def _load_sentence_transformer(model_name: str):
+    """Load SentenceTransformer, preferring the local HuggingFace cache.
+
+    SentenceTransformer by default does a HEAD against huggingface.co
+    on every load to see if there's a newer revision of the model.
+    When HF is down or slow (observed: 504 Gateway Timeout storms
+    that retry 5× with exponential backoff), this pins nova-rag's
+    startup for minutes or indefinitely — even when the model is
+    already fully cached on disk.
+
+    Strategy: try offline first using the HF snapshot cache, and
+    only fall back to an online load if the model isn't cached yet.
+    This makes the second and all subsequent cold starts robust
+    against HF outages.
+    """
+    from sentence_transformers import SentenceTransformer
+
+    try:
+        # local_files_only forces huggingface_hub to skip network I/O
+        # and resolve from ~/.cache/huggingface. Fails only if the
+        # model has never been downloaded.
+        return SentenceTransformer(model_name, local_files_only=True)
+    except TypeError:
+        # Older sentence-transformers (<3.0) may not accept the kwarg
+        # directly — fall through to the online path.
+        pass
+    except Exception as exc:  # noqa: BLE001
+        logger.info("Local-only load failed (%s); falling back to online download", exc)
+
+    return SentenceTransformer(model_name)
+
+
 def _get_model(model_name: str, on_progress: Callable[[str], None] | None = None):
     """Load the sentence-transformers model (lazy thread-safe singleton)."""
     global _model
@@ -45,12 +87,10 @@ def _get_model(model_name: str, on_progress: Callable[[str], None] | None = None
         else:
             logger.info("Loading embedding model '%s'...", model_name)
 
-        from sentence_transformers import SentenceTransformer
-
-        loaded = SentenceTransformer(model_name)
+        loaded = _load_sentence_transformer(model_name)
 
         if on_progress:
-            on_progress(f"[1/4] Model loaded: {model_name} ({loaded.get_sentence_embedding_dimension()}-dim embeddings)")
+            on_progress(f"[1/4] Model loaded: {model_name} ({_embedding_dim(loaded)}-dim embeddings)")
         else:
             logger.info("Model loaded: %s", model_name)
 
@@ -242,7 +282,7 @@ def index_project(
 
     # Phase 1: Load model
     model = _get_model(config.model_name, on_progress=on_progress)
-    embedding_dim = model.get_sentence_embedding_dimension()
+    embedding_dim = _embedding_dim(model)
 
     store = Store(index_dir, embedding_dim)
 

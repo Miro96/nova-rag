@@ -6,8 +6,9 @@ import logging
 import os
 import sys
 import threading
+from typing import Callable
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 
 from nova_rag.config import Config
 from nova_rag.indexer import index_project
@@ -94,14 +95,23 @@ def _bg_index_one(project_path: str, label: str | None = None) -> None:
             _indexing_done[key] = final
 
 
-def _auto_index(project_path: str) -> str | None:
-    """Auto-index project(s) in background. Returns immediately.
+def _auto_index(
+    project_path: str,
+    on_progress: Callable[[str], None] | None = None,
+) -> str | None:
+    """Auto-index project(s). Returns a status message or None.
 
-    - First call for an unindexed project: starts background indexing,
-      returns a progress message so the LLM knows to retry.
-    - While indexing: returns current progress message.
-    - After indexing finishes: returns final summary once, then None.
-    - Already indexed: returns None (no-op).
+    Two modes:
+
+    - ``on_progress is None`` (default, direct-Python callers): start
+      indexing in a background thread and return immediately with a
+      message so the caller knows results may be incomplete.
+    - ``on_progress`` is a callable (MCP tool with Context): run the
+      index synchronously in this thread and push progress lines to
+      the callback. On MCP this surfaces as notifications so the user
+      sees live progress instead of an opaque "thinking...".
+
+    Either mode never re-indexes a project that is already up to date.
     """
     from pathlib import Path
 
@@ -136,6 +146,8 @@ def _auto_index(project_path: str) -> str | None:
     messages = []
     for p, label in paths_to_index:
         key = str(Path(p).resolve())
+        tag = f"{label}: " if label else ""
+
         with _indexing_lock:
             # Already finished?
             if key in _indexing_done:
@@ -147,21 +159,82 @@ def _auto_index(project_path: str) -> str | None:
                 messages.append(_indexing_in_progress[key])
                 continue
 
-            # Start background indexing
-            _indexing_in_progress[key] = f"{label + ': ' if label else ''}starting..."
+            # Reserve the slot before we release the lock.
+            _indexing_in_progress[key] = f"{tag}starting..."
 
-        threading.Thread(
-            target=_bg_index_one,
-            args=(p, label),
-            daemon=True,
-        ).start()
-        tag = f"{label}: " if label else ""
-        messages.append(f"{tag}⏳ Indexing started in background — results may be incomplete until done.")
+        if on_progress is None:
+            # Background mode: start a daemon thread and return quickly.
+            threading.Thread(
+                target=_bg_index_one,
+                args=(p, label),
+                daemon=True,
+            ).start()
+            messages.append(
+                f"{tag}⏳ Indexing started in background — results may be incomplete until done."
+            )
+            continue
+
+        # Streaming mode: run the index in the calling thread and push
+        # every progress line to the callback so MCP clients see a live
+        # spinner instead of silence.
+        try:
+            on_progress(f"{tag}starting…")
+
+            def _stream(msg: str) -> None:
+                line = f"{tag}{msg}"
+                with _indexing_lock:
+                    _indexing_in_progress[key] = line
+                on_progress(line)
+
+            index_project(p, config=_config, on_progress=_stream)
+            ensure_watching(p, _config)
+            messages.append(f"{tag}done")
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Synchronous indexing failed for %s", p)
+            messages.append(f"{tag}failed: {exc}")
+        finally:
+            with _indexing_lock:
+                _indexing_in_progress.pop(key, None)
 
     return " | ".join(messages) if messages else None
 
 
 # ── Smart router (primary tool) ──
+
+
+def _ctx_progress(ctx: Context | None) -> Callable[[str], None] | None:
+    """Adapt FastMCP Context into a synchronous str→None progress sink.
+
+    Returns None if no context, so _auto_index stays in background mode
+    for direct-Python callers.
+
+    FastMCP Context.info() is an async coroutine, but tool functions
+    declared as sync are executed in an anyio worker thread. From that
+    thread we can hop back into the event loop via anyio.from_thread.run
+    to schedule ctx.info and wait for it. If that fails (e.g. the tool
+    was called outside an anyio task group), fall back to a no-op and
+    rely on logger.info for observability.
+    """
+    if ctx is None:
+        return None
+
+    try:
+        from anyio.from_thread import run as _anyio_run
+    except ImportError:
+        _anyio_run = None  # type: ignore[assignment]
+
+    def _emit(msg: str) -> None:
+        logger.info("[progress] %s", msg)
+        if _anyio_run is None:
+            return
+        try:
+            _anyio_run(ctx.info, msg)
+        except Exception:  # noqa: BLE001
+            # Not called from an anyio worker thread, or the session is
+            # gone — stderr logging above is enough.
+            logger.debug("ctx.info emit failed", exc_info=True)
+
+    return _emit
 
 
 @mcp.tool()
@@ -172,6 +245,7 @@ def code_search(
     top_k: int = 10,
     path_filter: str | None = None,
     language: str | None = None,
+    ctx: Context | None = None,
 ) -> dict:
     """Smart code search — automatically detects what you need.
 
@@ -200,7 +274,7 @@ def code_search(
         Results with an "intent" field showing what was detected.
     """
     project_path = path or os.getcwd()
-    indexing_log = _auto_index(project_path)
+    indexing_log = _auto_index(project_path, on_progress=_ctx_progress(ctx))
 
     from pathlib import Path as _Path
     root = _Path(project_path).resolve()
@@ -262,7 +336,8 @@ def rag_search(
     top_k: int = 10,
     path_filter: str | None = None,
     language: str | None = None,
-) -> list[dict]:
+    ctx: Context | None = None,
+) -> dict:
     """Hybrid semantic + keyword search. Use code_search instead for auto-routing.
 
     Args:
@@ -271,14 +346,20 @@ def rag_search(
         top_k: Max results.
         path_filter: Filter file paths.
         language: Filter by language.
+
+    Returns:
+        dict with ``results`` (list) and optional ``_indexing`` message
+        describing background-indexing status. Always a dict so callers
+        don't need a type-check branch.
     """
     project_path = path or os.getcwd()
-    indexing_log = _auto_index(project_path)
+    indexing_log = _auto_index(project_path, on_progress=_ctx_progress(ctx))
     results = search(query=query, project_path=project_path, config=_config,
                      top_k=top_k, path_filter=path_filter, language=language)
+    out: dict = {"results": results}
     if indexing_log:
-        return {"_indexing": indexing_log, "results": results}
-    return results
+        out["_indexing"] = indexing_log
+    return out
 
 
 @mcp.tool()
@@ -480,6 +561,11 @@ def main() -> None:
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
         stream=sys.stderr,
     )
+    # Third-party libs are chatty at INFO — every model-metadata GET and
+    # every sentence-transformers batch gets logged and floods MCP stderr
+    # without helping the user debug anything. Pin them to WARNING.
+    for noisy in ("httpx", "httpcore", "huggingface_hub", "sentence_transformers", "urllib3"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     _preload_model()
     mcp.run()
 

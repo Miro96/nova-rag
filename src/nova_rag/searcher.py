@@ -49,7 +49,9 @@ def search(
         return []
 
     model = _get_model(config.model_name)
-    embedding_dim = model.get_sentence_embedding_dimension()
+    from nova_rag.indexer import _embedding_dim
+
+    embedding_dim = _embedding_dim(model)
     store = Store(index_dir, embedding_dim)
 
     query_embedding = model.encode(
@@ -368,8 +370,13 @@ def smart_search(
 
 # ── Workspace / Multi-project ──
 
+# Only unambiguously backend tokens. Drop generic words like:
+#   "api"      — matches OpenAPI, "API client" in React, "third-party API"
+#   "service"  — matches ServiceWorker, Angular services, service-worker.js
+#   "server"   — matches Next.js "server component", server-side rendering
+# Require word boundaries so "backend" doesn't match "backendpoint".
 _BACKEND_PATTERNS = re.compile(
-    r"(backend|api|endpoint|controller|service|database|migration|server|middleware)",
+    r"(\bbackend\b|\bendpoint\b|\bcontroller\b|\bdatabase\b|\bmigration\b|\bmiddleware\b|\bORM\b|\bSQL\b|\brepository\b|\bdaemon\b)",
     re.IGNORECASE,
 )
 

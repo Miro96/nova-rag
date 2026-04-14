@@ -234,12 +234,27 @@ class TestProjectTypeRouting:
         assert _detect_project_type_from_query("stripe webhook handler") is None
         assert _detect_project_type_from_query("materialized view refresh") is None
 
+    def test_ambiguous_domain_terms_dont_force_backend(self):
+        """'api', 'service', 'server' are domain terms — not backend-only.
+
+        OpenAPI generators, Angular services, Next.js server components,
+        React API clients etc. live on the frontend and must not hide
+        the frontend subprojects.
+        """
+        from nova_rag.searcher import _detect_project_type_from_query
+
+        assert _detect_project_type_from_query("API client in React") is None
+        assert _detect_project_type_from_query("ServiceWorker cache invalidation") is None
+        assert _detect_project_type_from_query("service worker fetch interception") is None
+
     def test_mixed_signals_return_none(self):
         """If a query matches both backend and frontend markers, don't guess."""
         from nova_rag.searcher import _detect_project_type_from_query
 
         assert (
-            _detect_project_type_from_query("api endpoint powering the settings modal")
+            _detect_project_type_from_query(
+                "database migration powering the settings modal"
+            )
             is None
         )
 

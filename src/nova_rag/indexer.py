@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -23,14 +24,22 @@ from nova_rag.store import Store
 
 logger = logging.getLogger(__name__)
 
-# Lazy-loaded model singleton
+# Lazy-loaded model singleton. Guarded by _model_lock so that parallel
+# search workers can't each load their own SentenceTransformer copy on
+# a cold start — that wastes ~90MB and several seconds per extra worker.
 _model = None
+_model_lock = threading.Lock()
 
 
 def _get_model(model_name: str, on_progress: Callable[[str], None] | None = None):
-    """Load the sentence-transformers model (lazy singleton)."""
+    """Load the sentence-transformers model (lazy thread-safe singleton)."""
     global _model
-    if _model is None:
+    if _model is not None:
+        return _model
+    with _model_lock:
+        if _model is not None:
+            return _model
+
         if on_progress:
             on_progress(f"[1/4] Loading embedding model '{model_name}'... (first time downloads ~80MB)")
         else:
@@ -38,13 +47,15 @@ def _get_model(model_name: str, on_progress: Callable[[str], None] | None = None
 
         from sentence_transformers import SentenceTransformer
 
-        _model = SentenceTransformer(model_name)
+        loaded = SentenceTransformer(model_name)
 
         if on_progress:
-            on_progress(f"[1/4] Model loaded: {model_name} ({_model.get_sentence_embedding_dimension()}-dim embeddings)")
+            on_progress(f"[1/4] Model loaded: {model_name} ({loaded.get_sentence_embedding_dimension()}-dim embeddings)")
         else:
             logger.info("Model loaded: %s", model_name)
-    return _model
+
+        _model = loaded
+        return _model
 
 
 def _file_hash(path: Path) -> str:

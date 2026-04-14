@@ -4,6 +4,7 @@ code graph navigation, dead code detection, smart query routing, and workspace s
 from __future__ import annotations
 
 import re
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import numpy as np
@@ -12,17 +13,12 @@ from nova_rag.config import Config
 from nova_rag.store import Store
 from nova_rag.workspace import Project, load_workspace, is_monorepo
 
-# Lazy-loaded model singleton (shared with indexer)
-_model = None
-
-
 def _get_model(model_name: str):
-    global _model
-    if _model is None:
-        from sentence_transformers import SentenceTransformer
+    # Delegate to indexer's cache so the server's background pre-load
+    # (which warms indexer._model) is actually reused by search.
+    from nova_rag.indexer import _get_model as _indexer_get_model
 
-        _model = SentenceTransformer(model_name)
-    return _model
+    return _indexer_get_model(model_name)
 
 
 def _open_store(project_path: str | Path, config: Config) -> tuple[Store, Path] | None:
@@ -431,17 +427,23 @@ def search_workspace(
             if typed_projects:
                 projects = typed_projects
 
-    # Search each project
-    all_results = []
-    for p in projects:
+    # Search each project in parallel — projects are independent, the
+    # embedding model is shared+thread-safe, and stores open per-project.
+    def _search_one(p: Project) -> list[dict]:
         try:
             results = search(query, p.path, config, top_k=top_k, path_filter=path_filter, language=language)
             for r in results:
                 r["project"] = p.name
                 r["project_type"] = p.type
-            all_results.extend(results)
+            return results
         except Exception:
-            pass  # Skip projects that fail
+            return []
+
+    all_results: list[dict] = []
+    if projects:
+        with ThreadPoolExecutor(max_workers=min(len(projects), 8)) as ex:
+            for results in ex.map(_search_one, projects):
+                all_results.extend(results)
 
     # Re-rank by score across all projects
     all_results.sort(key=lambda r: r.get("score", 0), reverse=True)

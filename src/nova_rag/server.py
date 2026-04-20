@@ -605,6 +605,150 @@ def rag_projects_remove(name: str, path: str = "") -> dict:
     return {"removed": removed, "name": name}
 
 
+# ── Documentation generation ──
+
+_docs_lock = threading.Lock()
+_docs_in_progress: dict[str, str] = {}  # path → latest progress
+_docs_done: dict[str, dict] = {}  # path → final result
+
+
+def _bg_generate_docs(project_path: str, output_dir: str, concurrency: int,
+                       model: str, language: str, force: bool) -> None:
+    """Run documentation generation in a background thread."""
+    from nova_rag.docs_generator import run_generate_docs
+    from nova_rag.store import Store
+
+    index_dir = _config.ensure_index_dir(project_path)
+    store = Store(index_dir)
+
+    def _on_progress(msg: str) -> None:
+        with _docs_lock:
+            _docs_in_progress[project_path] = msg
+
+    try:
+        result = run_generate_docs(
+            store=store,
+            project_path=project_path,
+            output_dir=output_dir,
+            concurrency=concurrency,
+            model=model,
+            language=language,
+            force=force,
+            on_progress=_on_progress,
+        )
+        with _docs_lock:
+            _docs_done[project_path] = result
+            _docs_in_progress.pop(project_path, None)
+    except Exception as e:
+        logger.exception("Documentation generation failed")
+        with _docs_lock:
+            _docs_done[project_path] = {"error": str(e)}
+            _docs_in_progress.pop(project_path, None)
+    finally:
+        store.close()
+
+
+@mcp.tool()
+def rag_docs(
+    path: str = "",
+    output_dir: str = "",
+    concurrency: int = 0,
+    model: str = "",
+    language: str = "en",
+    force: bool = False,
+) -> dict:
+    """Generate comprehensive documentation for the codebase.
+
+    Creates structured markdown docs with Mermaid diagrams, organized by
+    automatically-detected modules.  Uses Claude CLI for generation.
+
+    Documentation is saved to ``{project}/docs/generated/`` by default.
+    On subsequent runs, only modules with changed source files are
+    regenerated (use ``force=True`` to regenerate everything).
+
+    Args:
+        path: Project directory. Defaults to cwd.
+        output_dir: Where to save docs. Defaults to {project}/docs/generated.
+        concurrency: Max parallel Claude processes (default from config, usually 4).
+        model: Claude model — "sonnet", "opus", or "haiku" (default from config).
+        language: Documentation language code. Default "en" (English).
+                  Examples: "uk" (Ukrainian), "de" (German), "fr" (French).
+        force: Regenerate all docs even if cached.
+    """
+    project_path = str(__import__("pathlib").Path(path or os.getcwd()).resolve())
+    out = output_dir or _config.get_docs_output(project_path)
+    conc = concurrency or _config.docs_concurrency
+    mdl = model or _config.docs_model
+
+    # Check if already in progress
+    with _docs_lock:
+        if project_path in _docs_in_progress:
+            return {
+                "status": "in_progress",
+                "progress": _docs_in_progress[project_path],
+            }
+        # Check for completed result
+        if project_path in _docs_done:
+            result = _docs_done.pop(project_path)
+            return {"status": "completed", **result}
+
+    # Ensure indexed first
+    _auto_index(project_path)
+
+    # Start background generation
+    with _docs_lock:
+        _docs_in_progress[project_path] = "Starting documentation generation..."
+
+    threading.Thread(
+        target=_bg_generate_docs,
+        args=(project_path, out, conc, mdl, language, force),
+        daemon=True,
+    ).start()
+
+    return {
+        "status": "started",
+        "output_dir": out,
+        "model": mdl,
+        "language": language,
+        "concurrency": conc,
+        "message": (
+            "Documentation generation started in background. "
+            "Call rag_docs_status() to check progress, or call rag_docs() again "
+            "to get the result when it completes."
+        ),
+    }
+
+
+@mcp.tool()
+def rag_docs_status(path: str = "") -> dict:
+    """Check documentation generation status and list generated docs.
+
+    Shows whether docs exist, when they were generated, which modules
+    are documented, and whether generation is currently in progress.
+
+    Args:
+        path: Project directory. Defaults to cwd.
+    """
+    project_path = str(__import__("pathlib").Path(path or os.getcwd()).resolve())
+    out = _config.get_docs_output(project_path)
+
+    # Check background generation state
+    with _docs_lock:
+        if project_path in _docs_in_progress:
+            return {
+                "status": "in_progress",
+                "progress": _docs_in_progress[project_path],
+                "output_dir": out,
+            }
+        if project_path in _docs_done:
+            result = _docs_done.pop(project_path)
+            return {"status": "completed", **result}
+
+    # Check existing docs on disk
+    from nova_rag.docs_generator import get_docs_status
+    return get_docs_status(out)
+
+
 def main() -> None:
     """Entry point for the MCP server."""
     logging.basicConfig(
